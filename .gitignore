@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+#ignoring tracking of large data sets in raw data folder
+raw_data/* 
+.RDataTm*
+7sites.png
+ARGprofiler.Rproj
+panres*
+README.docx

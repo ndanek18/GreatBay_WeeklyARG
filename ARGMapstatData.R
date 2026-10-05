@@ -127,7 +127,9 @@ PanRes_metadata <- read_xlsx("C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_
 #load in weekly metadata csv file (contains date, sites, temp, salinity etc)
 weekly_metadata <- read_csv("C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/raw_data/Metadata_ARG_metagenome_samples.csv")
 
-
+#remove NAs
+weekly_metadata <- weekly_metadata %>% 
+  filter(if_any(everything(), ~ !is.na(.)))
 
 #join all metadata files to the panres concatenated files 
 all_joined <- panres_file_concat %>%
@@ -178,12 +180,24 @@ ARG_summary <- all_joined %>%
     SE = sd / sqrt(n),
     .groups = "drop")
 
-chlorophyll_summary <- all_joined %>%
+ARG_summary2 <- all_joined %>%
   group_by(Location, Month) %>%
+  summarise(
+    mean_frags = mean(fragmentCount_prop_eachARG, na.rm = TRUE),
+    sd_frags = sd(fragmentCount_prop_eachARG, na.rm = TRUE),
+    .groups = "drop")
+
+chlorophyll_summary <- weekly_metadata %>%
+  group_by(Location, month_pull) %>%
   summarise(
     mean_chlor = mean(chlorophyll_ug_per_L, na.rm = TRUE),
     sd_chlor = sd(chlorophyll_ug_per_L, na.rm = TRUE),
-    .groups = "drop")
+    .groups = "drop") %>%
+  mutate(
+    Month = factor(
+      month_pull,
+      levels = c(9, 10, 11, 12),
+      labels = c("September", "October", "November", "December"))) #name the months according to their number
 
 
 #### ====================================================================== ####
@@ -198,10 +212,24 @@ ARG_palette <- c(
   "#F6C98B",  
   "#D9B8D8", 
   "#A6CEE3",  
-  "#8DD3C7",  
+  "#6FB5AA", 
   "#F4A582",  
   "#C6B4CE")
 
+
+#bolder option if needed 
+ARG_palette2 <- c(
+  "#7A7AC7",  # purple-blue
+  "#4FAF7B",  # green
+  "#E6A23C",  # golden orange
+  "#B66BB3",  # purple
+  "#4C9BC6",  # blue
+  "#35A89A",  # teal
+  "#E76F51",  # coral
+  "#8E6FAE"   # violet
+)
+
+#test the colors 
 ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) +
   geom_col(position = "stack") + #scale_y_continuous(transform = scales:: +
   labs( x = "Site", y = "Standardized fragment count", title = "ARG abundance by month", fill = "ARG Class") +
@@ -217,6 +245,7 @@ Site_palette <- c(
   "HILT" = "#CC79A7",  
   "CML"  = "#994F00")
 
+#test the colors
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location)) +
   geom_point(size = 4) +
   theme_classic() +
@@ -232,6 +261,7 @@ Month_palette <- c(
   "September"  = "#56B4E9",  
   "December"  = "#332288")  
 
+#test the colors 
 ggplot(pcoa_points_location, aes(x = PCoA1, y = PCoA2, color = Month)) +
   geom_point(size = 4) +
   theme_classic() +
@@ -241,6 +271,8 @@ ggplot(pcoa_points_location, aes(x = PCoA1, y = PCoA2, color = Month)) +
     color = "Month") + stat_ellipse() + theme_classic() + scale_color_manual(values = Month_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.5)
 
 
+#### ====================================================================== ####
+#stacked bar graphs 
 
 #all_bars is the same for the first two stacked bar graphs, sp can just add <+ all_bars> to the ggplot script 
 all_bars <- list(geom_col(position = "stack"),
@@ -248,12 +280,6 @@ all_bars <- list(geom_col(position = "stack"),
                        theme(legend.position = "right",
                              axis.text.x = element_text(angle = 45, hjust = 1)),
                        facet_wrap("Month"))
-
-#to add second y axis with temp
-temp <- list(geom_line(aes(y = temp * 10, group = 1),color = "black" ) +
-               geom_point(aes(y = temp * 10), color = "black") +
-               scale_y_continuous(name = "Fragment count",
-                                  sec.axis = sec_axis(~ . / 10, name = "Temperature (°C)")))
 
 
 #stacked bar plot of site vs raw fragment count
@@ -302,30 +328,57 @@ ggplot(all_joined, aes(x = Month, y = fragmentCount_prop_eachARG)) +
         fill = "ARG Class") +
   facet_wrap("Location", nrow = 7, ncol = 1) + scale_fill_manual(values = ARG_palette)
 
-  
-  
-#scatterplot of standardized fragment count vs chlorophyll by class with linear regression line 
-ggplot( all_joined, aes(x = as.numeric(chlorophyll_ug_per_L), y = as.numeric(fragmentCount_prop_all), color = class)) + 
-    geom_point(size = 2) + geom_smooth(method = "lm", se = TRUE) +
-    theme_classic() + labs(x = "Chlorophyll (ug/L))", y = "Standardized Total Fragment Count") + scale_color_manual(values = ARG_palette)
-  
-#line graph by class and site of means and standard error
+#### ====================================================================== ####
+#scatterplots
+
+#point graph of mean frag count faceted by site
 ggplot(ARG_summary, aes(x = Month, y = mean_abundance, color = class, group = class)) +
-  geom_point() + geom_line() + 
+  geom_point(size = 3) + 
   geom_errorbar(aes(ymin = mean_abundance - SE,ymax = mean_abundance + SE),width = 0.2) +
   facet_wrap(~Location, ncol = 1, nrow = 7) +
   theme_classic() + labs(y = "Mean standardized ARG fragment count") + scale_color_manual(values = ARG_palette)
 
-#line graph of chlorophyll over tme
+
+#mean frag count over time by site
+ggplot(ARG_summary2, aes(x = Month, y = mean_frags, color = Location, group = Location)) +
+  geom_point(size = 2) + labs(y = "Mean fragment count") + 
+  geom_errorbar(aes(ymin = mean_frags - sd_frags,ymax = mean_frags + sd_frags),width = 0.2) +
+  theme_classic() + scale_color_manual(values = Site_palette)
+  
+#### ====================================================================== ####
+#Chloropyll data 
+
+#scatterplot of standardized fragment count vs log chlorophyll by class 
+ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
+  geom_point(size = 2) + geom_line(size = .75) + 
+  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = ARG_palette)
+#+ geom_smooth(method = "lm", se = TRUE)
+
+#scatterplot of standardized fragment count vs log chlorophyll by location
+ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = Location)) + 
+  geom_point(size = 2) + geom_line(size = .75) + 
+  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = Site_palette)
+
+
+#line graph of chlorophyll over time, colored by site 
 ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, group = Location)) +
-  geom_point() + geom_line() + 
+  geom_point() + geom_line() + labs(y = "Mean chlorophyll(ug/L)") + 
   geom_errorbar(aes(ymin = mean_chlor - sd_chlor,ymax = mean_chlor + sd_chlor),width = 0.2) +
   theme_classic() + scale_color_manual(values = Site_palette)
 
+#### ====================================================================== ####
+#Just CML, JEL data
 
 #create a data table from all_joined for just CML and JEL
 CML_JEL <- all_joined %>% 
   filter(Location %in% c("CML", "JEL"))
+
+
+#to add second y axis with temp
+temp <- list(geom_line(aes(y = temp * 10, group = 1),color = "black" ) +
+               geom_point(aes(y = temp * 10), color = "black") +
+               scale_y_continuous(name = "Fragment count",
+                                  sec.axis = sec_axis(~ . / 10, name = "Temperature (°C)")))
 
 
 #scatterplot of standardized fragment count vs salinity with linear regression line 

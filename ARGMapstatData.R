@@ -46,15 +46,6 @@ panres_file_concat <- panres_file_concat %>%
 names(panres_file_concat)[2] <- "RefSequence"
 
 
-#calculate panres total fragment sums for each sampleid
-panres_fragment_sums <- panres_file_concat %>%
-  group_by(sampleid) %>%
-  summarise(sum_panres_fragmentCount = sum(as.numeric(fragmentCount), na.rm = TRUE))
-
-#check it worked
-print(panres_fragment_sums)
-
-
 #now do the same for the .mapstat kma_mOTU files (bacteria hits)
 
 input_directory_mOTUs <- "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/raw_data/mOTU_files" # file path
@@ -107,13 +98,6 @@ names(mOTU_file_concat)[2] <- "RefSequence"
 #from the panres_concat file
 colnames(mOTU_file_concat)[-1] <- paste0("mOTU_", colnames(mOTU_file_concat)[-1])
 
-#calculate mOTU fragment sums for each sampleid
-mOTU_fragment_sums <- mOTU_file_concat %>%
-  group_by(sampleid) %>%
-  summarise(sum_mOTU_fragmentCount = sum(as.numeric(mOTU_fragmentCount), na.rm = TRUE))
-
-#check it worked
-print(mOTU_fragment_sums)
 
 #### ====================================================================== ####
 #LOADING IN METADATA
@@ -124,7 +108,7 @@ PanRes_metadata <- read_xlsx("C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_
                              col_types = c("text", "text", "text", "text", "text", "numeric", "text", "text"))
 
 
-#load in weekly metadata csv file (contains date, sites, temp, salinity etc)
+#load in weekly metadata csv file (contains dates, sites, chlorophyll, etc for each sample id)
 weekly_metadata <- read_csv("C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/raw_data/Metadata_ARG_metagenome_samples.csv")
 
 #remove NAs
@@ -141,36 +125,53 @@ all_joined <- panres_file_concat %>%
 #remove NAs
 all_joined_NoNA <- all_joined[!is.na(all_joined$class), ]
 
-#add a column that calculates each ARG class fragment count / sum mOTU fragment counts for that sample id
-all_joined <- all_joined %>%
-  ungroup() %>% 
-  group_by(sampleid) %>% 
-  mutate(fragmentCount_prop_eachARG = 
-           as.numeric(fragmentCount) / as.numeric(sum_mOTU_fragmentCount)*10000) #multiple by 10,000 so the ouput isn't so tnu
-
-
-#calculate sum ARG fragment counts / sum batceria fragment counts for each sampleid
-all_joined <- all_joined %>%
-  mutate(fragmentCount_prop_all = 
-           as.numeric(sum_panres_fragmentCount) / as.numeric(sum_mOTU_fragmentCount)*10000)
-
 #set the order of the locations
 all_joined$Location <- factor(
   all_joined$Location,
   levels = c("CML", "JEL", "HILT", "NBL", "WIS", "LAMP", "MAIN"))
 
-#name the months
+#name the months according to their number
 all_joined <- all_joined %>%
   mutate(
     Month = factor(
       month_pull,
       levels = c(9, 10, 11, 12),
-      labels = c("September", "October", "November", "December")
-    )
-  )
+      labels = c("September", "October", "November", "December")))
 
-#calculate standard deviation and standard error for class for each site/month combo 
 
+#### ====================================================================== ####
+#CALCULATIONS FOR STANDARDIZED COUNTS, MEANS, STANDARD ERROR 
+
+#calculate panres (ARG) total fragment sum for each sampleid (produces one sum per sampleid)
+panres_fragment_sums <- panres_file_concat %>%
+  group_by(sampleid) %>%
+  summarise(sum_panres_fragmentCount = sum(as.numeric(fragmentCount), na.rm = TRUE))
+
+
+#calculate mOTU (bacterial) fragment sum for each sampleid
+mOTU_fragment_sums <- mOTU_file_concat %>%
+  group_by(sampleid) %>%
+  summarise(sum_mOTU_fragmentCount = sum(as.numeric(mOTU_fragmentCount), na.rm = TRUE))
+
+
+#calculate each ARG class fragment count / mOTU fragment sum for that sample id
+#(it will become a new column in all_joined)
+all_joined <- all_joined %>%
+  ungroup() %>% 
+  group_by(sampleid) %>% 
+  mutate(fragmentCount_prop_eachARG = 
+           as.numeric(fragmentCount) / as.numeric(sum_mOTU_fragmentCount)*10000) 
+                                    #multiply by 10,000 so the ouput isn't so tiny
+
+
+#calculate ARG fragment count sum / mOTU fragment count sum for each sampleid
+all_joined <- all_joined %>%
+  mutate(fragmentCount_prop_all = 
+           as.numeric(sum_panres_fragmentCount) / as.numeric(sum_mOTU_fragmentCount)*10000)
+                                    #multiply by 10,000 so the ouput isn't so tiny
+
+
+#means and standard error for fragment counts for each class per month per site
 ARG_summary <- all_joined %>%
   group_by(Location, Month, class) %>%
   summarise(
@@ -180,6 +181,7 @@ ARG_summary <- all_joined %>%
     SE = sd / sqrt(n),
     .groups = "drop")
 
+#means and standard error per month and site
 ARG_summary2 <- all_joined %>%
   group_by(Location, Month) %>%
   summarise(
@@ -187,24 +189,24 @@ ARG_summary2 <- all_joined %>%
     sd_frags = sd(fragmentCount_prop_eachARG, na.rm = TRUE),
     .groups = "drop")
 
+#chlorophyll means per site and month 
 chlorophyll_summary <- weekly_metadata %>%
   group_by(Location, month_pull) %>%
   summarise(
     mean_chlor = mean(chlorophyll_ug_per_L, na.rm = TRUE),
     sd_chlor = sd(chlorophyll_ug_per_L, na.rm = TRUE),
     .groups = "drop") %>%
-  mutate(
-    Month = factor(
+  mutate(Month = factor(
       month_pull,
       levels = c(9, 10, 11, 12),
-      labels = c("September", "October", "November", "December"))) #name the months according to their number
+      labels = c("September", "October",
+                 "November", "December"))) #name the months according to their number
 
 
 #### ====================================================================== ####
 #GRAPHS
 
-#set color paletes
-
+#set color palletes for ARGs, sites, and months
 
 ARG_palette <- c(
   "#B8B8E8", 
@@ -229,7 +231,7 @@ ARG_palette2 <- c(
   "#8E6FAE"   # violet
 )
 
-#test the colors 
+#test the ARG colors 
 ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) +
   geom_col(position = "stack") + #scale_y_continuous(transform = scales:: +
   labs( x = "Site", y = "Standardized fragment count", title = "ARG abundance by month", fill = "ARG Class") +
@@ -245,7 +247,7 @@ Site_palette <- c(
   "HILT" = "#CC79A7",  
   "CML"  = "#994F00")
 
-#test the colors
+#test the site colors
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location)) +
   geom_point(size = 4) +
   theme_classic() +
@@ -261,7 +263,7 @@ Month_palette <- c(
   "September"  = "#56B4E9",  
   "December"  = "#332288")  
 
-#test the colors 
+#test the month colors 
 ggplot(pcoa_points_location, aes(x = PCoA1, y = PCoA2, color = Month)) +
   geom_point(size = 4) +
   theme_classic() +
@@ -272,37 +274,44 @@ ggplot(pcoa_points_location, aes(x = PCoA1, y = PCoA2, color = Month)) +
 
 
 #### ====================================================================== ####
-#stacked bar graphs 
+#STACKED BAR GRAPHS 
 
-#all_bars is the same for the first two stacked bar graphs, sp can just add <+ all_bars> to the ggplot script 
+#all_bars is the same for the first two stacked bar graphs, so can just add <+ all_bars> to the ggplot script 
 all_bars <- list(geom_col(position = "stack"),
                        theme_classic(),
                        theme(legend.position = "right",
-                             axis.text.x = element_text(angle = 45, hjust = 1)),
-                       facet_wrap("Month"))
+                             axis.text.x = element_text(angle = 45, hjust = 1)))
 
 
-#stacked bar plot of site vs raw fragment count
+#stacked bar plot of site vs raw fragment count (unstandardized counts)
 ggplot(all_joined, aes(x = Location, y = fragmentCount, fill = class)) +
   labs( x = "Site", y = "Fragment Count", title = "ARG abundance by month",
-        fill = "ARG Class") + all_bars + scale_fill_manual(values = ARG_palette)
+  fill = "ARG Class") + all_bars + scale_fill_manual(values = ARG_palette) + 
+  facet_wrap(~Month) + 
+  theme_classic() + theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.text = element_text(size = 8))
 
   
 #stacked bar plot of site vs standardized fragment count(to mOTU sums)
 ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) +
-    geom_col(position = "stack") + #scale_y_continuous(transform = scales:: +
-    labs( x = "Site", y = "Standardized fragment count", title = "ARG abundance by month", fill = "ARG Class") +
-    all_bars + scale_fill_manual(values = ARG_palette)
+    geom_col(position = "stack") + 
+    labs( x = "Site", y = "Standardized ARG fragment count", fill = "ARG Class") +
+    all_bars + scale_fill_manual(values = ARG_palette) + facet_wrap(~Month) + 
+    theme_classic() + theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.text = element_text(size = 8))
   
  
-  
 #stacked bar plot of Date vs fragment count
 ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) +
     geom_col(position = "stack") +
     theme_classic() +
     theme(legend.position = "right",
           axis.text.x = element_text(angle = 45, hjust = 1)) +
-    labs( x = "Month", y = "Fragment Count", title = "ARG abundance over time by site",
+    labs( x = "Month", y = "Fragment Count",
           fill = "ARG Class") +
     facet_wrap("Location", nrow = 1, ncol = 7) + scale_fill_manual(values = ARG_palette)
   
@@ -336,7 +345,12 @@ ggplot(ARG_summary, aes(x = Month, y = mean_abundance, color = class, group = cl
   geom_point(size = 3) + 
   geom_errorbar(aes(ymin = mean_abundance - SE,ymax = mean_abundance + SE),width = 0.2) +
   facet_wrap(~Location, ncol = 1, nrow = 7) +
-  theme_classic() + labs(y = "Mean standardized ARG fragment count") + scale_color_manual(values = ARG_palette)
+  theme_classic() + labs(y = "Mean standardized ARG fragment count", color= "ARG class") +
+  scale_color_manual(values = ARG_palette) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.text = element_text(size = 7))
 
 
 #mean frag count over time by site
@@ -346,55 +360,122 @@ ggplot(ARG_summary2, aes(x = Month, y = mean_frags, color = Location, group = Lo
   theme_classic() + scale_color_manual(values = Site_palette)
   
 #### ====================================================================== ####
-#Chloropyll data 
+#CHLOROPHYLL GRAPHS 
 
-#scatterplot of standardized fragment count vs log chlorophyll by class 
-ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
-  geom_point(size = 2) + geom_line(size = .75) + 
-  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = ARG_palette)
-#+ geom_smooth(method = "lm", se = TRUE)
+#scatterplot of chlorophyll over time, colored by site 
+ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, group = Location)) +
+  geom_point(size = 3) + labs(y = "Mean chlorophyll(ug/L)") + 
+  geom_errorbar(aes(ymin = mean_chlor - sd_chlor,ymax = mean_chlor + sd_chlor),width = 0.2) +
+  theme_classic() + scale_color_manual(values = Site_palette)
+
 
 #scatterplot of standardized fragment count vs log chlorophyll by location
 ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = Location)) + 
-  geom_point(size = 2) + geom_line(size = .75) + 
+  geom_point(size = 3)  + 
   theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = Site_palette)
 
+#scatterplot of standardized fragment count vs log chlorophyll by class 
+ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
+  geom_point(size = 2)  + 
+  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = ARG_palette)
+#+ geom_smooth(method = "lm", se = TRUE)
 
-#line graph of chlorophyll over time, colored by site 
-ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, group = Location)) +
-  geom_point() + geom_line() + labs(y = "Mean chlorophyll(ug/L)") + 
-  geom_errorbar(aes(ymin = mean_chlor - sd_chlor,ymax = mean_chlor + sd_chlor),width = 0.2) +
-  theme_classic() + scale_color_manual(values = Site_palette)
 
 #### ====================================================================== ####
 #Just CML, JEL data
 
 #create a data table from all_joined for just CML and JEL
 CML_JEL <- all_joined %>% 
+  filter(Location %in% c("CML", "JEL")) %>% 
+  mutate(
+    Month = factor(
+      month_pull,
+      levels = c(9, 10, 11, 12),
+      labels = c("September", "October", "November", "December"))) #name the months according to their number
+
+#pull out CML and JEL from monthyl means data
+CML_JEL_means <- ARG_summary2 %>% 
   filter(Location %in% c("CML", "JEL"))
 
+# Calculate mean temperature for each location and month
+temp_summary <- CML_JEL %>%
+  group_by(Location, Month) %>%
+  summarise(
+    mean_temp = mean(as.numeric(temp), na.rm = TRUE),
+    .groups = "drop")
 
-#to add second y axis with temp
-temp <- list(geom_line(aes(y = temp * 10, group = 1),color = "black" ) +
-               geom_point(aes(y = temp * 10), color = "black") +
-               scale_y_continuous(name = "Fragment count",
-                                  sec.axis = sec_axis(~ . / 10, name = "Temperature (°C)")))
+# Scaling factor for the secondary axis
+count_range <- range(as.numeric(CML_JEL$fragmentCount_prop_all), na.rm = TRUE)
+temp_range <- range(temp_summary$mean_temp, na.rm = TRUE)
 
+scale_factor <- diff(count_range) / diff(temp_range)
+
+#plot fragment counts of all sites and temperature as 2nd y axis
+ggplot(ARG_summary2, aes(x = Month)) +
+  geom_point(
+    aes(y = mean_frags, color = Location),
+    size = 3) +
+  geom_line(
+    data = temp_summary,
+    aes(
+      y = (mean_temp - temp_range[1]) * scale_factor + count_range[1],
+      color = Location,
+      group = Location),linewidth = 1,linetype = "dashed") +
+  scale_y_continuous(
+    name = "Mean Standardized Fragment Count",
+    sec.axis = sec_axis(
+      ~ (. - count_range[1]) / scale_factor + temp_range[1],
+      name = "Mean Temperature (C)")) +
+  theme_classic() + labs(x = "Month",
+    color = "Location") + scale_color_manual(values = Site_palette)
+
+
+#plot fragment counts of just CML, JEL and temperature as 2nd y axis
+ggplot(CML_JEL_means, aes(x = Month)) +
+  geom_point(
+    aes(y = mean_frags, color = Location),
+    size = 3) +
+  geom_line(
+    data = temp_summary,
+    aes(
+      y = (mean_temp - temp_range[1]) * scale_factor + count_range[1],
+      color = Location,
+      group = Location),linewidth = 1,linetype = "dashed") +
+  scale_y_continuous(
+    name = "Mean Standardized Fragment Count",
+    sec.axis = sec_axis(
+      ~ (. - count_range[1]) / scale_factor + temp_range[1],
+      name = "Mean Temperature (C)")) +
+  theme_classic() + labs(x = "Month",
+                         color = "Location") + scale_color_manual(values = Site_palette)
+
+
+#plot of temperature over time at CML and JEL
+ggplot(CML_JEL,
+       aes(x = Month,
+           y = as.numeric(temp),
+           color = Location)) +
+  geom_point(size = 2) +
+  theme_classic() +
+  labs(x = "Month", y = "Temperature") + scale_color_manual(values = Site_palette)
 
 #scatterplot of standardized fragment count vs salinity with linear regression line 
 ggplot(CML_JEL, aes(x = as.numeric(sal), y = as.numeric(fragmentCount_prop_all), color = Location)) +
   geom_point(size = 2) + geom_smooth(method = "lm", color = "black", se = TRUE) +
-  theme_classic() + labs(x = "Salinity (ppt)", y = "Standardized Total Fragment Count") 
+  theme_classic() + labs(x = "Salinity (ppt)", y = "Standardized Total Fragment Count") + 
+  scale_color_manual(values = Site_palette)
 
 #scatterplot of standardized fragment count vs temperature by site  with linear regression line 
 ggplot(CML_JEL, aes(x = as.numeric(temp), y = as.numeric(fragmentCount_prop_all), color = Location)) + 
   geom_point(size = 2) + geom_smooth(method = "lm", color = "black", se = TRUE) +
-  theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count")
+  theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count") + 
+  scale_color_manual(values = Site_palette)
 
 #scatterplot of standardized fragment count vs temperature by class with linear regression line 
 ggplot(CML_JEL, aes(x = as.numeric(temp), y = as.numeric(fragmentCount_prop_all), color = class)) + 
   geom_point(size = 2) + geom_smooth(method = "lm", se = TRUE) +
-  theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count") 
+  theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count")  + 
+  scale_color_manual(values = ARG_palette)
 
 
 #### ====================================================================== ####

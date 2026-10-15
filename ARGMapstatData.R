@@ -1,7 +1,12 @@
+#R CODE FOR DATA ANALYSIS FOR WEEKLY ARG METAGENOME DATA
+
+#load packages 
 library(tidyverse)
 library(here)
 library(readxl)
 library(vegan)
+library(data.table) #to load in large data sets faster
+library(cowplot) #for adding salinity arrow to stacked bar graphs
 
 #### ====================================================================== ####
 #LOADING IN AND CONCATENTING .MAPSTAT.FILTERED AND .MAPSTAT FILES FOR EACH SAMPLE
@@ -71,16 +76,47 @@ mOTU_file_names <- gsub("^/", "", mOTU_file_names) # remove forward slashes, nee
 names(mOTU_files) <- mOTU_file_names
 
 
+
 mOTU_files # check they are all there
 
 # Read in the files and concatenate them by sample id
-mOTU_file_concat <- map_dfr(mOTU_files, 
-                              ~read_tsv(.x,
-                                        skip = 6,  col_types = cols(.default = "c")),  # read everything as character first # skip = number of hashtag lines (excluding column titles)
-                              .id = "sampleid")
+#old method- now using data.table to speed it up
+#mOTU_file_concat <- map_dfr(mOTU_files, 
+                              #~read_tsv(.x,
+                                        #skip = 6,  col_types = cols(.default = "c")),  # read everything as character first # skip = number of hashtag lines (excluding column titles)
+                              #.id = "sampleid")
 
 
-#check it worked
+
+# Read files and combine them into one data table using data.table package
+mOTU_file_concat <- rbindlist(
+  lapply(names(mOTU_files), function(sample_id) {
+    
+    dt <- fread(
+      mOTU_files[[sample_id]],
+      skip = 6,
+      sep = "\t",
+      colClasses = "character"
+    )
+    
+    dt[, sampleid := sample_id]
+    
+    dt
+  }),
+  use.names = TRUE,
+  fill = TRUE
+)
+
+#move sampleid to the first column
+setcolorder(mOTU_file_concat, c("sampleid", setdiff(names(mOTU_file_concat), "sampleid")))
+
+# Check dimensions of the combined data
+dim(mOTU_file_concat)
+
+#check beginning of combined data
+head(mOTU_file_concat)
+
+#check sample ids in combined data
 unique(mOTU_file_concat$sampleid)
 
 #check number of rows per sample
@@ -98,9 +134,23 @@ names(mOTU_file_concat)[2] <- "RefSequence"
 #from the panres_concat file
 colnames(mOTU_file_concat)[-1] <- paste0("mOTU_", colnames(mOTU_file_concat)[-1])
 
+#### ====================================================================== ####
+#CALCULATE FRAGMENT COUNT SUMS 
+
+#calculate panres (ARG) total fragment sum for each sampleid (produces one sum per sampleid)
+panres_fragment_sums <- panres_file_concat %>%
+  group_by(sampleid) %>%
+  summarise(sum_panres_fragmentCount = sum(as.numeric(fragmentCount), na.rm = TRUE))
+
+
+#calculate mOTU (bacterial) fragment sum for each sampleid
+mOTU_fragment_sums <- mOTU_file_concat %>%
+  group_by(sampleid) %>%
+  summarise(sum_mOTU_fragmentCount = sum(as.numeric(mOTU_fragmentCount), na.rm = TRUE))
+
 
 #### ====================================================================== ####
-#LOADING IN METADATA
+#LOADING IN AND JOINING METADATA
 
 #load in metadata file that contains the PanRes info
 PanRes_metadata <- read_xlsx("C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/panres_annotations.xlsx", 
@@ -125,10 +175,10 @@ all_joined <- panres_file_concat %>%
 #remove NAs
 all_joined_NoNA <- all_joined[!is.na(all_joined$class), ]
 
-#set the order of the locations
+#set the order of the locations 
 all_joined$Location <- factor(
   all_joined$Location,
-  levels = c("CML", "JEL", "HILT", "NBL", "WIS", "LAMP", "MAIN"))
+  levels = c("CML", "HILT", "JEL", "NBL", "WIS", "LAMP", "MAIN")) 
 
 #name the months according to their number
 all_joined <- all_joined %>%
@@ -138,21 +188,16 @@ all_joined <- all_joined %>%
       levels = c(9, 10, 11, 12),
       labels = c("September", "October", "November", "December")))
 
+#group the locations based on fresh vs salty
+all_joined <- all_joined %>% 
+  mutate(
+    Shape = case_when(
+      Location %in% c("CML", "JEL", "HILT", "NBL") ~ "Saltwater sites",
+      Location %in% c("WIS", "LAMP", "MAIN") ~ "Freshwater sites"))
+
 
 #### ====================================================================== ####
 #CALCULATIONS FOR STANDARDIZED COUNTS, MEANS, STANDARD ERROR 
-
-#calculate panres (ARG) total fragment sum for each sampleid (produces one sum per sampleid)
-panres_fragment_sums <- panres_file_concat %>%
-  group_by(sampleid) %>%
-  summarise(sum_panres_fragmentCount = sum(as.numeric(fragmentCount), na.rm = TRUE))
-
-
-#calculate mOTU (bacterial) fragment sum for each sampleid
-mOTU_fragment_sums <- mOTU_file_concat %>%
-  group_by(sampleid) %>%
-  summarise(sum_mOTU_fragmentCount = sum(as.numeric(mOTU_fragmentCount), na.rm = TRUE))
-
 
 #calculate each ARG class fragment count / mOTU fragment sum for that sample id
 #(it will become a new column in all_joined)
@@ -161,14 +206,14 @@ all_joined <- all_joined %>%
   group_by(sampleid) %>% 
   mutate(fragmentCount_prop_eachARG = 
            as.numeric(fragmentCount) / as.numeric(sum_mOTU_fragmentCount)*10000) 
-                                    #multiply by 10,000 so the ouput isn't so tiny
+#multiply by 10,000 so the ouput isn't so tiny
 
 
 #calculate ARG fragment count sum / mOTU fragment count sum for each sampleid
 all_joined <- all_joined %>%
   mutate(fragmentCount_prop_all = 
            as.numeric(sum_panres_fragmentCount) / as.numeric(sum_mOTU_fragmentCount)*10000)
-                                    #multiply by 10,000 so the ouput isn't so tiny
+#multiply by 10,000 so the ouput isn't so tiny
 
 
 #means and standard error for fragment counts for each class per month per site
@@ -201,7 +246,6 @@ chlorophyll_summary <- weekly_metadata %>%
       levels = c(9, 10, 11, 12),
       labels = c("September", "October",
                  "November", "December"))) #name the months according to their number
-
 
 #### ====================================================================== ####
 #GRAPHS
@@ -278,69 +322,93 @@ ggplot(pcoa_points_location, aes(x = PCoA1, y = PCoA2, color = Month)) +
 
 #all_bars is the same for the first two stacked bar graphs, so can just add <+ all_bars> to the ggplot script 
 all_bars <- list(geom_col(position = "stack"),
-                       theme_classic(),
-                       theme(legend.position = "right",
-                             axis.text.x = element_text(angle = 45, hjust = 1)))
+                       theme_classic())
 
 
 #stacked bar plot of site vs raw fragment count (unstandardized counts)
-ggplot(all_joined, aes(x = Location, y = fragmentCount, fill = class)) +
+ggplot(all_joined, aes(x = Location, y = fragmentCount, fill = class)) + all_bars +  
   labs( x = "Site", y = "Fragment Count", title = "ARG abundance by month",
-  fill = "ARG Class") + all_bars + scale_fill_manual(values = ARG_palette) + 
-  facet_wrap(~Month) + 
-  theme_classic() + theme(
+  fill = "ARG Class") + scale_fill_manual(values = ARG_palette) + 
+  facet_wrap(~Month) + theme(
     legend.position = "bottom",
     legend.box = "horizontal",
     legend.text = element_text(size = 8))
 
   
 #stacked bar plot of site vs standardized fragment count(to mOTU sums)
-ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) +
-    geom_col(position = "stack") + 
-    labs( x = "Site", y = "Standardized ARG fragment count", fill = "ARG Class") +
-    all_bars + scale_fill_manual(values = ARG_palette) + facet_wrap(~Month) + 
-    theme_classic() + theme(
-    legend.position = "bottom",
+#FOR POSTER
+stacked_bar <- ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) + 
+  all_bars + labs( x = "Site", y = "Standardized ARG fragment count", fill = "ARG Class") +
+    scale_fill_manual(values = ARG_palette) + 
+  facet_wrap(~Month, ncol = 1, nrow = 4) +  theme(
+    legend.position = "right",
+    #legend.box = "horizontal",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 11), 
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold")) + 
+    geom_vline( xintercept = 4.5,linetype = "dashed",
+    color = "#C0392B",linewidth = 0.8) #add vertical line to distinguish between fresh and salty sites
+
+stacked_bar
+
+#create an arrow panel (for adding salinity arrow)
+arrow_plot <- ggplot() + annotate(
+    "segment",x = 1, xend = 7,y = 1, yend = 1,arrow = arrow(
+      length = unit(0.2, "cm"),
+      type = "closed"), linewidth = 0.7, color = "#C0392B") +
+  annotate("text",x = 4, y = 0.5,label = "Decreasing salinity",
+    size = 4, color = "#C0392B") +
+  scale_x_continuous(limits = c(0.5, 7.5)) +
+  scale_y_continuous(limits = c(0, 1.5)) +
+  theme_void()
+
+#combine stacked bar graph and arrow panel
+plot_grid(
+  stacked_bar,
+  arrow_plot,
+  ncol = 1,
+  rel_heights = c(1, 0.08),
+  align = "v")
+
+
+#stacked bar plot of site vs standardized fragment count(to mOTU sums)
+#legend on right
+ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) + 
+  all_bars + labs( x = "Site", y = "Standardized ARG fragment count", fill = "ARG Class") +
+  scale_fill_manual(values = ARG_palette) + 
+  facet_wrap(~Month, ncol = 1, nrow = 4) +  theme(
+    legend.position = "right",
     legend.box = "horizontal",
-    legend.text = element_text(size = 8))
-  
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 11), 
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold"))
+
  
 #stacked bar plot of Date vs fragment count
-ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) +
-    geom_col(position = "stack") +
-    theme_classic() +
-    theme(legend.position = "right",
-          axis.text.x = element_text(angle = 45, hjust = 1)) +
+ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) + all_bars + 
     labs( x = "Month", y = "Fragment Count",
           fill = "ARG Class") +
-    facet_wrap("Location", nrow = 1, ncol = 7) + scale_fill_manual(values = ARG_palette)
+    facet_wrap("Location", nrow = 1, ncol = 7) + scale_fill_manual(values = ARG_palette) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
   
  
 #stacked bar plot of Date vs standardized fragment count
-ggplot(all_joined, aes(x = Month, y = fragmentCount_prop_eachARG, fill = class)) +
-    geom_col(position = "stack") +
-    theme_classic() +
-    theme(legend.position = "right",
-          axis.text.x = element_text(angle = 45, hjust = 1)) +
-    labs( x = "Month", y = "Standardized Fragment Count", title = "ARG abundance over time by site",
+ggplot(all_joined, aes(x = Month, y = fragmentCount_prop_eachARG, fill = class)) + all_bars + 
+    labs( x = "Month", y = "Standardized Fragment Count",
           fill = "ARG Class") +
-    facet_wrap("Location", nrow = 1, ncol = 7) + scale_fill_manual(values = ARG_palette)
-
-#stacked bar plot of Date vs standardized fragment count
-#work in progress
-ggplot(all_joined, aes(x = Month, y = fragmentCount_prop_eachARG)) +
-  geom_point() + geom_line() + 
-  theme_classic() +
-  theme(legend.position = "right",
-        axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs( x = "Month", y = "Standardized Fragment Count", title = "ARG abundance over time by site",
-        fill = "ARG Class") +
-  facet_wrap("Location", nrow = 7, ncol = 1) + scale_fill_manual(values = ARG_palette)
+    facet_wrap("Location", nrow = 1, ncol = 7) + scale_fill_manual(values = ARG_palette) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 6)) 
 
 #### ====================================================================== ####
 #scatterplots
 
-#point graph of mean frag count faceted by site
+#point graph of mean fragment count faceted by site, error bars = standard error
 ggplot(ARG_summary, aes(x = Month, y = mean_abundance, color = class, group = class)) +
   geom_point(size = 3) + 
   geom_errorbar(aes(ymin = mean_abundance - SE,ymax = mean_abundance + SE),width = 0.2) +
@@ -370,14 +438,28 @@ ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, gro
 
 
 #scatterplot of standardized fragment count vs log chlorophyll by location
-ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = Location)) + 
-  geom_point(size = 3)  + 
-  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = Site_palette)
+#FOR POSTER
+ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = Location, shape = Shape)) + 
+  geom_point(size = 5)  + theme_classic() + scale_shape_manual(values = c(
+    "Saltwater sites" = 17,  # triangle for salty
+    "Freshwater sites" = 16   # circle for fresh
+  )) + 
+  labs(x = "log Chlorophyll (ug/L)", y = "Standardized Total ARG Fragment Count") + 
+  scale_color_manual(values = Site_palette) + theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
+                                                    axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+                                                    axis.text.y = element_text(size = 12))
+  
+
 
 #scatterplot of standardized fragment count vs log chlorophyll by class 
 ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
   geom_point(size = 2)  + 
-  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count") + scale_color_manual(values = ARG_palette)
+  theme_classic() + labs(x = "log Chlorophyll (ug/L))", y = "Standardized Total ARG Fragment Count", color = "ARG class") +
+  scale_color_manual(values = ARG_palette) + 
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.text = element_text(size = 7))
 #+ geom_smooth(method = "lm", se = TRUE)
 
 
@@ -393,7 +475,7 @@ CML_JEL <- all_joined %>%
       levels = c(9, 10, 11, 12),
       labels = c("September", "October", "November", "December"))) #name the months according to their number
 
-#pull out CML and JEL from monthyl means data
+#pull out CML and JEL from monthly means data
 CML_JEL_means <- ARG_summary2 %>% 
   filter(Location %in% c("CML", "JEL"))
 
@@ -457,40 +539,42 @@ ggplot(CML_JEL,
            color = Location)) +
   geom_point(size = 2) +
   theme_classic() +
-  labs(x = "Month", y = "Temperature") + scale_color_manual(values = Site_palette)
+  labs(x = "Month", y = "Temperature (C)") + scale_color_manual(values = Site_palette)
 
 #scatterplot of standardized fragment count vs salinity with linear regression line 
 ggplot(CML_JEL, aes(x = as.numeric(sal), y = as.numeric(fragmentCount_prop_all), color = Location)) +
-  geom_point(size = 2) + geom_smooth(method = "lm", color = "black", se = TRUE) +
+  geom_point(size = 2) +
   theme_classic() + labs(x = "Salinity (ppt)", y = "Standardized Total Fragment Count") + 
   scale_color_manual(values = Site_palette)
+  #+ geom_smooth(method = "lm", color = "black", se = TRUE) 
 
 #scatterplot of standardized fragment count vs temperature by site  with linear regression line 
 ggplot(CML_JEL, aes(x = as.numeric(temp), y = as.numeric(fragmentCount_prop_all), color = Location)) + 
-  geom_point(size = 2) + geom_smooth(method = "lm", color = "black", se = TRUE) +
+  geom_point(size = 2) +
   theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count") + 
   scale_color_manual(values = Site_palette)
+  #+ geom_smooth(method = "lm", color = "black", se = TRUE)
 
 #scatterplot of standardized fragment count vs temperature by class with linear regression line 
 ggplot(CML_JEL, aes(x = as.numeric(temp), y = as.numeric(fragmentCount_prop_all), color = class)) + 
-  geom_point(size = 2) + geom_smooth(method = "lm", se = TRUE) +
+  geom_point(size = 2) +
   theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count")  + 
   scale_color_manual(values = ARG_palette)
+  #+ geom_smooth(method = "lm", se = TRUE)
 
 
 #### ====================================================================== ####
-#PCoA plots
+#PCoA PLOTS
 
-#by location 
+#BY LOCATION
+
 #reshape data
-
 arg_matrix <- all_joined %>%
   select(sampleid, RefSequence, fragmentCount_prop_eachARG) %>%
   pivot_wider(
     names_from = RefSequence,
     values_from = fragmentCount_prop_eachARG,
     values_fill = 0)
-
 
 #values_fn = sum, #sum values within each ARG class  
 
@@ -526,8 +610,15 @@ pcoa_points <- pcoa_points %>%
       distinct(),
     by = "sampleid")
 
+#group the locations based on fresh vs salty
+pcoa_points <- pcoa_points %>% 
+  mutate(
+    Shape = case_when(
+      Location %in% c("CML", "JEL", "HILT", "NBL") ~ "Saltwater sites",
+      Location %in% c("WIS", "LAMP", "MAIN") ~ "Freshwater sites"))
 
-#calcualte % variation explained by each axis
+
+#calculate % variation explained by each axis
 eig_percent <- pcoa$eig / sum(pcoa$eig) * 100
 
 
@@ -535,14 +626,21 @@ PCoA1_percent <- round(eig_percent[1], 1)
 PCoA2_percent <- round(eig_percent[2], 1)
 
 #plot PCoA by Location
-ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location)) +
-  geom_point(size = 4) +
+#FOR POSTER
+ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) + #shapes based on salinity group
+  geom_point(size = 6) + scale_shape_manual(values = c(
+      "Saltwater sites" = 17,  # triangle for salty
+      "Freshwater sites" = 16   # circle for fresh
+    )) + 
   theme_classic() +
   labs(
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
-    color = "Location") + stat_ellipse() + theme_classic() + 
-  scale_color_manual(values = Site_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.5)
+    color = "Location") + theme_classic() + 
+  scale_color_manual(values = Site_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.8) +
+  theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12)) #+ stat_ellipse()
 
 #PERMNOVA test for clustering
 adonis2(arg_dist ~ Location, data = pcoa_points, permutations = 999)
@@ -555,13 +653,16 @@ location_month
 
 #plot PCoA by month
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Month)) +
-  geom_point(size = 4) +
+  geom_point(size = 6) +
   theme_classic() +
     labs(
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
     color = "Month") + stat_ellipse() + theme_classic() +
-  scale_color_manual(values = Month_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.5)
+  scale_color_manual(values = Month_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.8) +
+  theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12))
 
 #PERMNOVA test for clustering
 adonis2(arg_dist ~ Month, data = pcoa_points, permutations = 999)

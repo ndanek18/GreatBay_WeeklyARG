@@ -178,7 +178,7 @@ all_joined_NoNA <- all_joined[!is.na(all_joined$class), ]
 #set the order of the locations 
 all_joined$Location <- factor(
   all_joined$Location,
-  levels = c("CML", "HILT", "JEL", "NBL", "WIS", "LAMP", "MAIN")) 
+  levels = c("MAIN", "LAMP", "WIS", "NBL", "JEL", "HILT", "CML")) 
 
 #name the months according to their number
 all_joined <- all_joined %>%
@@ -347,19 +347,18 @@ stacked_bar <- ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachA
     legend.text = element_text(size = 11), 
     axis.title.x = element_text(size = 14),
     axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
-    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold")) + 
-    geom_vline( xintercept = 4.5,linetype = "dashed",
-    color = "#C0392B",linewidth = 0.8) #add vertical line to distinguish between fresh and salty sites
+    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold")) 
+  #+ geom_vline( xintercept = 3.5,linetype = "dashed",color = "#C0392B",linewidth = 0.8) #add vertical line to distinguish between fresh and salty sites
 
 stacked_bar
 
 #create an arrow panel (for adding salinity arrow)
 arrow_plot <- ggplot() + annotate(
     "segment",x = 1, xend = 7,y = 1, yend = 1,arrow = arrow(
-      length = unit(0.2, "cm"),
-      type = "closed"), linewidth = 0.7, color = "#C0392B") +
-  annotate("text",x = 4, y = 0.5,label = "Decreasing salinity",
-    size = 4, color = "#C0392B") +
+      length = unit(0.4, "cm"),
+      type = "closed"), linewidth = 0.9, color = "#C0392B") +
+  annotate("text",x = 4, y = 0.5,label = "Increasing salinity",
+    size = 5, color = "#C0392B") +
   scale_x_continuous(limits = c(0.5, 7.5)) +
   scale_y_continuous(limits = c(0, 1.5)) +
   theme_void()
@@ -439,17 +438,17 @@ ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, gro
 
 #scatterplot of standardized fragment count vs log chlorophyll by location
 #FOR POSTER
-ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = Location, shape = Shape)) + 
+ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_eachARG), color = Location, shape = Shape)) + 
   geom_point(size = 5)  + theme_classic() + scale_shape_manual(values = c(
     "Saltwater sites" = 17,  # triangle for salty
     "Freshwater sites" = 16   # circle for fresh
   )) + 
-  labs(x = "log Chlorophyll (ug/L)", y = "Standardized Total ARG Fragment Count") + 
-  scale_color_manual(values = Site_palette) + theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
-                                                    axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+  labs(x = "log Chlorophyll (ug/L)", y = "Standardized ARG Fragment Count") + 
+  scale_color_manual(values = Site_palette) + 
+  theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
+                                                    axis.title.y = element_text(size = 14), 
+                                                    axis.text.x = element_text(size = 11),
                                                     axis.text.y = element_text(size = 12))
-  
-
 
 #scatterplot of standardized fragment count vs log chlorophyll by class 
 ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
@@ -627,6 +626,7 @@ PCoA2_percent <- round(eig_percent[2], 1)
 
 #plot PCoA by Location
 #FOR POSTER
+#no ellipses
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) + #shapes based on salinity group
   geom_point(size = 6) + scale_shape_manual(values = c(
       "Saltwater sites" = 17,  # triangle for salty
@@ -637,10 +637,29 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) 
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
     color = "Location") + theme_classic() + 
-  scale_color_manual(values = Site_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.8) +
+  scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-0.5, 1) +
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
         axis.text.y = element_text(size = 12)) #+ stat_ellipse()
+
+#plot PCoA by Location
+#FOR POSTER
+#with ellipses
+ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) + #shapes based on salinity group
+  geom_point(size = 6) + scale_shape_manual(values = c(
+    "Saltwater sites" = 17,  # triangle for salty
+    "Freshwater sites" = 16   # circle for fresh
+  )) + 
+  theme_classic() +
+  labs(
+    x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
+    y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
+    color = "Location") + theme_classic() + 
+  scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-1, 1.75) +
+  theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12)) + stat_ellipse()
+
 
 #PERMNOVA test for clustering
 adonis2(arg_dist ~ Location, data = pcoa_points, permutations = 999)

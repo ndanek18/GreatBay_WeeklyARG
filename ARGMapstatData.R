@@ -279,7 +279,7 @@ ARG_palette2 <- c(
 ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) +
   geom_col(position = "stack") + #scale_y_continuous(transform = scales:: +
   labs( x = "Site", y = "Standardized fragment count", title = "ARG abundance by month", fill = "ARG Class") +
-  all_bars + scale_fill_manual(values = ARG_palette)
+  scale_fill_manual(values = ARG_palette) + all_bars
 
 
 Site_palette <- c(
@@ -347,10 +347,7 @@ stacked_bar <- ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachA
     legend.text = element_text(size = 11), 
     axis.title.x = element_text(size = 14),
     axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
-    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold")) 
-  #+ geom_vline( xintercept = 3.5,linetype = "dashed",color = "#C0392B",linewidth = 0.8) #add vertical line to distinguish between fresh and salty sites
-
-stacked_bar
+    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold")) +geom_vline( xintercept = 3.5,linetype = "dashed",color = "#C0392B",linewidth = 0.8) #add vertical line to distinguish between fresh and salty sites
 
 #create an arrow panel (for adding salinity arrow)
 arrow_plot <- ggplot() + annotate(
@@ -364,12 +361,15 @@ arrow_plot <- ggplot() + annotate(
   theme_void()
 
 #combine stacked bar graph and arrow panel
-plot_grid(
+fig5 <- plot_grid(
   stacked_bar,
   arrow_plot,
   ncol = 1,
   rel_heights = c(1, 0.08),
   align = "v")
+
+#FOR POSTER
+fig5
 
 
 #stacked bar plot of site vs standardized fragment count(to mOTU sums)
@@ -637,7 +637,7 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) 
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
     color = "Location") + theme_classic() + 
-  scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-0.5, 1) +
+  scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-1, 1.75) +
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
         axis.text.y = element_text(size = 12)) #+ stat_ellipse()
@@ -658,7 +658,41 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) 
   scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-1, 1.75) +
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
-        axis.text.y = element_text(size = 12)) + stat_ellipse()
+        axis.text.y = element_text(size = 12)) + stat_ellipse(size = 1.5)
+
+#with ellipses by saltiness 
+ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2)) +
+  geom_point(aes(color = Location, shape = Shape), size = 6) +
+  scale_shape_manual(values = c(
+    "Saltwater sites" = 17,
+    "Freshwater sites" = 16
+  )) +
+  stat_ellipse(
+    aes(group = Shape, color = Shape),
+    linewidth = 1.5
+  ) +
+  scale_color_manual(
+    values = c(Site_palette,
+               "Saltwater sites" = "darkgray",
+               "Freshwater sites" = "black"
+    )
+  ) +
+  theme_classic() +
+  labs(
+    x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
+    y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
+    color = "Location",
+    shape = "Salinity group"
+  ) +
+  xlim(-0.75, 1) +
+  ylim(-1.5, 1.75) +
+  theme(
+    legend.text = element_text(size = 9),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12)
+  )
 
 
 #PERMNOVA test for clustering

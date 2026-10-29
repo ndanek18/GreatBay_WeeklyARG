@@ -7,6 +7,10 @@ library(readxl)
 library(vegan)
 library(data.table) #to load in large data sets faster
 library(cowplot) #for adding salinity arrow to stacked bar graphs
+library(dplyr) #for making summary tables
+library(tidyr) #for making summary tables
+library(writexl) #for exporting tables into excel 
+library(ggnewscale) #to add an additional scale for ellipses on pcoa plots
 
 #### ====================================================================== ####
 #LOADING IN AND CONCATENTING .MAPSTAT.FILTERED AND .MAPSTAT FILES FOR EACH SAMPLE
@@ -165,6 +169,15 @@ weekly_metadata <- read_csv("C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_L
 weekly_metadata <- weekly_metadata %>% 
   filter(if_any(everything(), ~ !is.na(.)))
 
+#name the months according to their number
+weekly_metadata <- weekly_metadata %>%
+  mutate(
+    Month = factor(
+      month_pull,
+      levels = c(9, 10, 11, 12),
+      labels = c("September", "October", "November", "December")))
+
+
 #join all metadata files to the panres concatenated files 
 all_joined <- panres_file_concat %>%
   left_join(weekly_metadata, by = "sampleid") %>% #left join in my weekly metadata
@@ -180,20 +193,12 @@ all_joined$Location <- factor(
   all_joined$Location,
   levels = c("MAIN", "LAMP", "WIS", "NBL", "JEL", "HILT", "CML")) 
 
-#name the months according to their number
-all_joined <- all_joined %>%
-  mutate(
-    Month = factor(
-      month_pull,
-      levels = c(9, 10, 11, 12),
-      labels = c("September", "October", "November", "December")))
-
 #group the locations based on fresh vs salty
 all_joined <- all_joined %>% 
   mutate(
     Shape = case_when(
-      Location %in% c("CML", "JEL", "HILT", "NBL") ~ "Saltwater sites",
-      Location %in% c("WIS", "LAMP", "MAIN") ~ "Freshwater sites"))
+      Location %in% c("CML", "JEL", "HILT", "NBL") ~ "Tidal sites",
+      Location %in% c("WIS", "LAMP", "MAIN") ~ "Nontidal sites"))
 
 
 #### ====================================================================== ####
@@ -338,7 +343,7 @@ ggplot(all_joined, aes(x = Location, y = fragmentCount, fill = class)) + all_bar
 #stacked bar plot of site vs standardized fragment count(to mOTU sums)
 #FOR POSTER
 stacked_bar <- ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) + 
-  all_bars + labs( x = "Site", y = "Standardized ARG fragment count", fill = "ARG Class") +
+  all_bars + labs( x = "Site", y = " Cumulative standardized ARG fragment count", fill = "ARG Class") +
     scale_fill_manual(values = ARG_palette) + 
   facet_wrap(~Month, ncol = 1, nrow = 4) +  theme(
     legend.position = "right",
@@ -439,16 +444,15 @@ ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, gro
 #scatterplot of standardized fragment count vs log chlorophyll by location
 #FOR POSTER
 ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_eachARG), color = Location, shape = Shape)) + 
-  geom_point(size = 5)  + theme_classic() + scale_shape_manual(values = c(
-    "Saltwater sites" = 17,  # triangle for salty
-    "Freshwater sites" = 16   # circle for fresh
-  )) + 
-  labs(x = "log Chlorophyll (ug/L)", y = "Standardized ARG Fragment Count") + 
+  geom_point(size = 6)  + theme_classic() + scale_shape_manual(values = c(
+    "Tidal sites" = 17,  # triangle for salty
+    "Nontidal sites" = 16 )) + # circle for fresh
+  labs(x = "log Chlorophyll (ug/L)", y = "Standardized ARG fragment count", shape = "Site Type") + 
   scale_color_manual(values = Site_palette) + 
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
                                                     axis.title.y = element_text(size = 14), 
                                                     axis.text.x = element_text(size = 11),
-                                                    axis.text.y = element_text(size = 12))
+                                                    axis.text.y = element_text(size = 12)) 
 
 #scatterplot of standardized fragment count vs log chlorophyll by class 
 ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
@@ -613,8 +617,8 @@ pcoa_points <- pcoa_points %>%
 pcoa_points <- pcoa_points %>% 
   mutate(
     Shape = case_when(
-      Location %in% c("CML", "JEL", "HILT", "NBL") ~ "Saltwater sites",
-      Location %in% c("WIS", "LAMP", "MAIN") ~ "Freshwater sites"))
+      Location %in% c("CML", "JEL", "HILT", "NBL") ~ "Tidal sites",
+      Location %in% c("WIS", "LAMP", "MAIN") ~ "Nontidal sites"))
 
 
 #calculate % variation explained by each axis
@@ -625,74 +629,71 @@ PCoA1_percent <- round(eig_percent[1], 1)
 PCoA2_percent <- round(eig_percent[2], 1)
 
 #plot PCoA by Location
-#FOR POSTER
 #no ellipses
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) + #shapes based on salinity group
   geom_point(size = 6) + scale_shape_manual(values = c(
-      "Saltwater sites" = 17,  # triangle for salty
-      "Freshwater sites" = 16   # circle for fresh
-    )) + 
-  theme_classic() +
-  labs(
+      "Tidal sites" = 17,  # triangle for salty
+      "Nontidal sites" = 16)) + # circle for fresh
+  theme_classic() +labs(
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
-    color = "Location") + theme_classic() + 
+    color = "Location",  shape = "Site Type") + theme_classic() + 
   scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-1, 1.75) +
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
-        axis.text.y = element_text(size = 12)) #+ stat_ellipse()
+        axis.text.y = element_text(size = 12)) 
 
-#plot PCoA by Location
-#FOR POSTER
-#with ellipses
+#plot PCoA by Location (all samples)
+#with ellipses based on tidal vs nontidal
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) + #shapes based on salinity group
   geom_point(size = 6) + scale_shape_manual(values = c(
-    "Saltwater sites" = 17,  # triangle for salty
-    "Freshwater sites" = 16   # circle for fresh
-  )) + 
+    "Tidal sites" = 17,  # triangle for salty
+    "Nontidal sites" = 16)) +  # circle for fresh
   theme_classic() +
   labs(
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
-    color = "Location") + theme_classic() + 
+    color = "Location",  shape = "Site Type") + theme_classic() + 
   scale_color_manual(values = Site_palette) + xlim(-0.75, 1) + ylim(-1, 1.75) +
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
-        axis.text.y = element_text(size = 12)) + stat_ellipse(size = 1.5)
+        axis.text.y = element_text(size = 12)) + stat_ellipse(size = 1)
 
+#plot PCoA by Location (all samples)
 #with ellipses by saltiness 
+#FOR POSTER
 ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2)) +
-  geom_point(aes(color = Location, shape = Shape), size = 6) +
-  scale_shape_manual(values = c(
-    "Saltwater sites" = 17,
-    "Freshwater sites" = 16
-  )) +
-  stat_ellipse(
-    aes(group = Shape, color = Shape),
-    linewidth = 1.5
-  ) +
+  # Points colored by location, shaped by tidal status
+  geom_point(aes(color = Location, shape = Shape), size = 8) +
+  scale_shape_manual(
+    name = "Site Type",
+    values = c(
+      "Tidal sites" = 17,
+      "Nontidal sites" = 16)) + # Color scale for locations
   scale_color_manual(
-    values = c(Site_palette,
-               "Saltwater sites" = "darkgray",
-               "Freshwater sites" = "black"
-    )
+    name = "Location",
+    values = Site_palette
   ) +
-  theme_classic() +
+  # Start a separate color scale for ellipses
+  ggnewscale::new_scale_color() +
+  stat_ellipse( # Ellipses colored by tidal status
+    aes(color = Shape, group = Shape),
+    linewidth = 1.5
+  ) + scale_color_manual(
+    name = "Ellipses",
+    values = c(
+      "Tidal sites" = "blue",
+      "Nontidal sites" = "cyan")) + theme_classic() +
   labs(
     x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
-    y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
-    color = "Location",
-    shape = "Salinity group"
-  ) +
-  xlim(-0.75, 1) +
-  ylim(-1.5, 1.75) +
-  theme(
+    y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)")) +
+  xlim(-0.75, 1) + ylim(-1.5, 1.2) + theme(
     legend.text = element_text(size = 9),
     axis.title.x = element_text(size = 14),
     axis.title.y = element_text(size = 14),
     axis.text.x = element_text(size = 11),
-    axis.text.y = element_text(size = 12)
-  )
+    axis.text.y = element_text(size = 12),
+    legend.position = "right")
 
 
 #PERMNOVA test for clustering
@@ -874,3 +875,75 @@ ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Month)) +
     color = "Month") + stat_ellipse() + theme_classic() +
   scale_color_manual(values = Month_palette) + xlim(-2, 1.5) + ylim(-2, 1.5)
 
+
+#### ====================================================================== ####
+#TABLES
+
+#making a summary table, grouped by month and location, showing ARG classes detected 
+
+# Complete sample metadata, including samples with no ARGs
+sample_metadata <- weekly_metadata %>%
+  select(sampleid, Month, Location) %>%
+  distinct()
+
+# Sum mOTU fragments across all samples
+mOTU_by_group <- sample_metadata %>%
+  left_join(mOTU_fragment_sums, by = "sampleid") %>%
+  group_by(Month, Location) %>%
+  summarise(
+    sum_mOTU_fragmentCount = sum(
+      sum_mOTU_fragmentCount, na.rm = TRUE
+    ),
+    .groups = "drop")
+
+# Sum PANRES fragments across samples
+panres_by_group <- sample_metadata %>%
+  left_join(panres_fragment_sums, by = "sampleid") %>%
+  group_by(Month, Location) %>%
+  summarise(
+    sum_panres_fragmentCount = sum(
+      sum_panres_fragmentCount, na.rm = TRUE
+    ),.groups = "drop")
+
+# Summarize ARG classes detected
+ARG_classes_by_group <- all_joined %>%
+  group_by(Month, Location) %>%
+  summarise(
+    `# ARG classes detected` = n_distinct(
+      class[!is.na(class)]
+    ),
+    `ARG classes detected` = paste(
+      sort(unique(na.omit(class))),
+      collapse = ", "
+    ),
+    .groups = "drop")
+
+# Combine into a complete table
+ARG_summary_table <- crossing(
+  Month = unique(sample_metadata$Month),
+  Location = unique(sample_metadata$Location)) %>%
+  left_join(ARG_classes_by_group, by = c("Month", "Location")) %>%
+  left_join(panres_by_group, by = c("Month", "Location")) %>%
+  left_join(mOTU_by_group, by = c("Month", "Location")) %>%
+  mutate(
+    `# ARG classes detected` = replace_na(
+      `# ARG classes detected`, 0L),
+    `ARG classes detected` = replace_na(
+      `ARG classes detected`, ""),
+    sum_panres_fragmentCount = replace_na(
+      sum_panres_fragmentCount, 0),
+    sum_mOTU_fragmentCount = replace_na(
+      sum_mOTU_fragmentCount, 0)) %>%
+  select(
+    Month,
+    Location,
+    `# ARG classes detected`,
+    `ARG classes detected`,
+    sum_panres_fragmentCount,
+    sum_mOTU_fragmentCount) %>%
+  arrange(Month, Location)
+
+ARG_summary_table
+
+#export table to excel
+write_xlsx(ARG_summary_table,"ARG_summary_table.xlsx")

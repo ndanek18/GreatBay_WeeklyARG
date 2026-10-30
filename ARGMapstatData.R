@@ -267,26 +267,6 @@ ARG_palette <- c(
   "#F4A582",  
   "#C6B4CE")
 
-
-#bolder option if needed 
-ARG_palette2 <- c(
-  "#7A7AC7",  # purple-blue
-  "#4FAF7B",  # green
-  "#E6A23C",  # golden orange
-  "#B66BB3",  # purple
-  "#4C9BC6",  # blue
-  "#35A89A",  # teal
-  "#E76F51",  # coral
-  "#8E6FAE"   # violet
-)
-
-#test the ARG colors 
-ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) +
-  geom_col(position = "stack") + #scale_y_continuous(transform = scales:: +
-  labs( x = "Site", y = "Standardized fragment count", title = "ARG abundance by month", fill = "ARG Class") +
-  scale_fill_manual(values = ARG_palette) + all_bars
-
-
 Site_palette <- c(
   "LAMP" = "#332288",  
   "MAIN" = "#882255", 
@@ -296,31 +276,11 @@ Site_palette <- c(
   "HILT" = "#CC79A7",  
   "CML"  = "#994F00")
 
-#test the site colors
-ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location)) +
-  geom_point(size = 4) +
-  theme_classic() +
-  labs(
-    x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
-    y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
-    color = "Location") + stat_ellipse() + theme_classic() +scale_color_manual(values = Site_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.5)
-
-
 Month_palette <- c(
   "October" = "#E69F00",  
   "November"   = "#009E73",  
   "September"  = "#56B4E9",  
   "December"  = "#332288")  
-
-#test the month colors 
-ggplot(pcoa_points_location, aes(x = PCoA1, y = PCoA2, color = Month)) +
-  geom_point(size = 4) +
-  theme_classic() +
-  labs(
-    x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
-    y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)"),
-    color = "Month") + stat_ellipse() + theme_classic() + scale_color_manual(values = Month_palette) + xlim(-1.5, 1.5) + ylim(-2, 1.5)
-
 
 #### ====================================================================== ####
 #STACKED BAR GRAPHS 

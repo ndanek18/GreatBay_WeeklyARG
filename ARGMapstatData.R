@@ -879,7 +879,7 @@ ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Month)) +
 #### ====================================================================== ####
 #TABLES
 
-#making a summary table, grouped by month and location, showing ARG classes detected 
+#MAKING TABLE SUMMARY, GROUPED BY MONTH AND LOCATION, FOR ARGS DETECTED
 
 # Complete sample metadata, including samples with no ARGs
 sample_metadata <- weekly_metadata %>%
@@ -892,8 +892,7 @@ mOTU_by_group <- sample_metadata %>%
   group_by(Month, Location) %>%
   summarise(
     sum_mOTU_fragmentCount = sum(
-      sum_mOTU_fragmentCount, na.rm = TRUE
-    ),
+      sum_mOTU_fragmentCount, na.rm = TRUE),
     .groups = "drop")
 
 # Sum PANRES fragments across samples
@@ -902,21 +901,17 @@ panres_by_group <- sample_metadata %>%
   group_by(Month, Location) %>%
   summarise(
     sum_panres_fragmentCount = sum(
-      sum_panres_fragmentCount, na.rm = TRUE
-    ),.groups = "drop")
+      sum_panres_fragmentCount, na.rm = TRUE),.groups = "drop")
 
 # Summarize ARG classes detected
 ARG_classes_by_group <- all_joined %>%
   group_by(Month, Location) %>%
   summarise(
     `# ARG classes detected` = n_distinct(
-      class[!is.na(class)]
-    ),
+      class[!is.na(class)]),
     `ARG classes detected` = paste(
       sort(unique(na.omit(class))),
-      collapse = ", "
-    ),
-    .groups = "drop")
+      collapse = ", "),.groups = "drop")
 
 # Combine into a complete table
 ARG_summary_table <- crossing(

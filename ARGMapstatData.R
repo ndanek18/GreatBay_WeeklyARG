@@ -15,7 +15,7 @@ library(ggnewscale) #to add an additional scale for ellipses on pcoa plots
 #### ====================================================================== ####
 #LOADING IN AND CONCATENTING .MAPSTAT.FILTERED AND .MAPSTAT FILES FOR EACH SAMPLE
 
-#load in and concat all of the mapstat.filtered kma_panres (ARG hits) files that I downloaded from premise
+#load in and concat all of the mapstat.filtered kma_panres (ARG hits) files that I downloaded from premise using filezilla
 
 input_directory <- "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/raw_data/panres_files" # file path
 
@@ -336,23 +336,8 @@ fig5 <- plot_grid(
 #FOR POSTER
 fig5
 
-
-#stacked bar plot of site vs standardized fragment count(to mOTU sums)
-#legend on right
-ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) + 
-  all_bars + labs( x = "Site", y = "Standardized ARG fragment count", fill = "ARG Class") +
-  scale_fill_manual(values = ARG_palette) + 
-  facet_wrap(~Month, ncol = 1, nrow = 4) +  theme(
-    legend.position = "right",
-    legend.box = "horizontal",
-    legend.title = element_text(size = 14, face = "bold"),
-    legend.text = element_text(size = 11), 
-    axis.title.x = element_text(size = 14),
-    axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
-    axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold"))
-
  
-#stacked bar plot of Date vs fragment count
+#stacked bar plot of Date vs fragment count faceted by site
 ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) + all_bars + 
     labs( x = "Month", y = "Fragment Count",
           fill = "ARG Class") +
@@ -361,7 +346,7 @@ ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) + all_bars +
         axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
   
  
-#stacked bar plot of Date vs standardized fragment count
+#stacked bar plot of Date vs standardized fragment count faceted by site
 ggplot(all_joined, aes(x = Month, y = fragmentCount_prop_eachARG, fill = class)) + all_bars + 
     labs( x = "Month", y = "Standardized Fragment Count",
           fill = "ARG Class") +
@@ -394,13 +379,6 @@ ggplot(ARG_summary2, aes(x = Month, y = mean_frags, color = Location, group = Lo
 #### ====================================================================== ####
 #CHLOROPHYLL GRAPHS 
 
-#scatterplot of chlorophyll over time, colored by site 
-ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, group = Location)) +
-  geom_point(size = 3) + labs(y = "Mean chlorophyll(ug/L)") + 
-  geom_errorbar(aes(ymin = mean_chlor - sd_chlor,ymax = mean_chlor + sd_chlor),width = 0.2) +
-  theme_classic() + scale_color_manual(values = Site_palette)
-
-
 #scatterplot of standardized fragment count vs log chlorophyll by location
 #FOR POSTER
 ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_eachARG), color = Location, shape = Shape)) + 
@@ -410,9 +388,16 @@ ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric
   labs(x = "log Chlorophyll (ug/L)", y = "Standardized ARG fragment count", shape = "Site Type") + 
   scale_color_manual(values = Site_palette) + 
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
-                                                    axis.title.y = element_text(size = 14), 
-                                                    axis.text.x = element_text(size = 11),
-                                                    axis.text.y = element_text(size = 12)) 
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12)) 
+
+#scatterplot of chlorophyll over time, colored by site 
+ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, group = Location)) +
+  geom_point(size = 3) + labs(y = "Mean chlorophyll(ug/L)") + 
+  geom_errorbar(aes(ymin = mean_chlor - sd_chlor,ymax = mean_chlor + sd_chlor),width = 0.2) +
+  theme_classic() + scale_color_manual(values = Site_palette)
+
 
 #scatterplot of standardized fragment count vs log chlorophyll by class 
 ggplot( all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_all), color = class)) + 
@@ -524,7 +509,6 @@ ggplot(CML_JEL, aes(x = as.numeric(temp), y = as.numeric(fragmentCount_prop_all)
   theme_classic() + labs(x = "Temperature (°C)", y = "Standardized Total Fragment Count")  + 
   scale_color_manual(values = ARG_palette)
   #+ geom_smooth(method = "lm", se = TRUE)
-
 
 #### ====================================================================== ####
 #PCoA PLOTS
@@ -902,3 +886,54 @@ ARG_summary_table
 
 #export table to excel
 write_xlsx(ARG_summary_table,"ARG_summary_table.xlsx")
+
+
+#### ====================================================================== ####
+#mOTUs4 bacterial taxonomy data
+
+
+
+#load in and concat all of the .mOTUs4 files that I downloaded from premise using filezilla
+#these are the microbial taxonomic output files from motu pipeline
+
+motus4_input_directory <- "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/raw_data/mOTUs4_files" # file path
+
+
+list.files(motus4_input_directory, recursive = TRUE)
+
+motus4_file_pattern <- ".mOTUs4"
+
+
+motus4_files <- list.files(motus4_input_directory,
+                           pattern = motus4_file_pattern,
+                           full.names = TRUE,
+                           recursive = TRUE)
+
+
+# Fix the name of the files to match the sample id
+motus4_file_names <- gsub(motus4_input_directory, "", motus4_files) # replace input directory with blank space
+motus4_file_names <- gsub(file_pattern, "", motus4_file_names) # replace file pattern with blank space
+motus4_file_names <- gsub("\\/", "", motus4_file_names) # remove forward slashes, need to escape the forward 
+
+names(motus4_files) <- motus4_file_names
+
+
+motus4_files # check they are all there
+
+# Read in the motus4 files and concatenate them by sample id
+motus4_file_concat <- map_dfr(motus4_files, 
+                              ~read_tsv(.x,
+                                        skip = 1,  col_types = cols(.default = "c")),  # read everything as character first # skip = number of hashtag lines (excluding column titles)
+                              .id = "sampleid")
+
+#infer the correct type per column after everything is combined as character
+motus4_file_concat <- motus4_file_concat %>%
+  type_convert()
+
+#rename column 2 
+names(panres_file_concat)[2] <- "RefSequence"
+
+
+
+
+

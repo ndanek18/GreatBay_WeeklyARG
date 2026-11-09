@@ -185,6 +185,12 @@ all_joined <- panres_file_concat %>%
   left_join(panres_fragment_sums, by = "sampleid") %>%  #left join in calculated panres fragment count sums for each sample id
   left_join(mOTU_fragment_sums, by = "sampleid")#left join in mOTU sums to have bacteria data to standardize to 
 
+#check what sample ids are in weekly_metedata but not in panres_files_concat
+#this shows which samples had no ARGs
+#(377 was unable to be sequenced which is a LAMP November sample)
+setdiff(weekly_metadata$sampleid, panres_file_concat$sampleid)
+
+
 #remove NAs
 all_joined_NoNA <- all_joined[!is.na(all_joined$class), ]
 
@@ -889,9 +895,9 @@ write_xlsx(ARG_summary_table,"ARG_summary_table.xlsx")
 
 
 #### ====================================================================== ####
-#mOTUs4 bacterial taxonomy data
+#mOTUs4 BACTERIAL TAXONOMY DATA
 
-
+#ran the filtered reads through the mOTU piepline
 
 #load in and concat all of the .mOTUs4 files that I downloaded from premise using filezilla
 #these are the microbial taxonomic output files from motu pipeline
@@ -901,7 +907,7 @@ motus4_input_directory <- "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab
 
 list.files(motus4_input_directory, recursive = TRUE)
 
-motus4_file_pattern <- ".mOTUs4"
+motus4_file_pattern <- "\\.mOTUs4"
 
 
 motus4_files <- list.files(motus4_input_directory,
@@ -909,31 +915,242 @@ motus4_files <- list.files(motus4_input_directory,
                            full.names = TRUE,
                            recursive = TRUE)
 
+#Extract sample IDs from filenames
+motus4_file_names <- gsub(
+  motus4_file_pattern,"",basename(motus4_files))
 
-# Fix the name of the files to match the sample id
-motus4_file_names <- gsub(motus4_input_directory, "", motus4_files) # replace input directory with blank space
-motus4_file_names <- gsub(file_pattern, "", motus4_file_names) # replace file pattern with blank space
-motus4_file_names <- gsub("\\/", "", motus4_file_names) # remove forward slashes, need to escape the forward 
 
+#Name the file vector with sample IDs
 names(motus4_files) <- motus4_file_names
 
+#Check files and sample IDs
+motus4_files
 
-motus4_files # check they are all there
-
-# Read in the motus4 files and concatenate them by sample id
-motus4_file_concat <- map_dfr(motus4_files, 
-                              ~read_tsv(.x,
-                                        skip = 1,  col_types = cols(.default = "c")),  # read everything as character first # skip = number of hashtag lines (excluding column titles)
-                              .id = "sampleid")
-
-#infer the correct type per column after everything is combined as character
-motus4_file_concat <- motus4_file_concat %>%
-  type_convert()
-
-#rename column 2 
-names(panres_file_concat)[2] <- "RefSequence"
+#chech how many files were loaded
+length(motus4_files)
 
 
+#View sample IDs
+names(motus4_files)
+
+#read in each file 
+
+motus4_list <- lapply(names(motus4_files), function(sample) {
+  
+  # Read file, skipping the metadata line
+  dt <- fread(motus4_files[[sample]], skip = 1)
+  
+  # Rename columns
+  setnames(dt, c("mOTU", "Taxonomy", sample))
+  
+  # Make sure abundance is numeric
+  dt[, (sample) := as.numeric(get(sample))]
+  
+  dt
+})
+
+# Name each list element by sample ID
+names(motus4_list) <- names(motus4_files)
+
+#merge all samples
+motus4_combined <- Reduce(
+  function(x, y) merge(
+    x, y,
+    by = c("mOTU", "Taxonomy"),
+    all = TRUE,
+    sort = FALSE), motus4_list)
+
+#remove extra header row
+motus4_combined <- motus4_combined[-1, ]
+
+sample_columns <- setdiff(names(motus4_combined), c("mOTU", "Taxonomy"))
+
+#replace missing values with zeros
+motus4_combined[,(sample_columns) := lapply(.SD, function(x) {
+    x[is.na(x)] <- 0
+    x}),.SDcols = sample_columns]
+
+#check on new table
+#Dimensions
+dim(motus4_combined)
+
+#First few rows
+head(motus4_combined)
+
+#Number of unique mOTUs
+uniqueN(motus4_combined$mOTU)
+
+#Number of sample columns
+length(sample_columns)
+
+#Check for remaining NAs in abundance columns
+colSums(is.na(motus4_combined[, ..sample_columns]))
+
+#Check sample abundance totals
+colSums(motus4_combined[, ..sample_columns])
 
 
+#### ====================================================================== ####
+#GRAPH MOTUS4 (MICROBIAL TAXONOMY) DATA
+
+#reshape data from wide to long format
+motus4_long <- melt(motus4_combined, id.vars = c("mOTU", "Taxonomy"),
+  variable.name = "SampleID", value.name = "Abundance")
+
+#rename column 3
+names(motus4_long)[3] <- "sampleid"
+
+
+#convert sampleid columns to characters 
+motus4_long$sampleid <- as.character(motus4_long$sampleid)
+
+weekly_metadata$sampleid <- as.character(weekly_metadata$sampleid)
+
+#join in metadata using sampleid
+motus4_long_meta <- motus4_long %>%
+  left_join(weekly_metadata, by = "sampleid")
+
+#check what sample ids are in weekly_metadata but not motus4_long
+#377 was unable to be sequenced which is a LAMP November sample
+setdiff(weekly_metadata$sampleid, motus4_long$sampleid)
+
+
+#make a class-level stacked bar graph,
+#where each bar represents one sample and each color represents a bacterial class
+
+#get bacterial classes
+motus4_long_meta[, Class := sub(".*c__([^;]+).*", "\\1", Taxonomy)]
+
+#calculate relative abundance
+motus4_long_meta[, RelativeAbundance := 
+              Abundance / sum(Abundance),
+            by = sampleid]
+
+
+# Group rare classes representing less than 1% into "Other"
+class_abundance <- motus4_long_meta[, .(
+  Total = sum(Abundance)), by = Class]
+class_abundance[, Proportion := Total / sum(Total)]
+motus4_long_meta[, Class_grouped :=
+                   ifelse(Class %in% class_abundance[Proportion < 0.01, Class],
+                          "Other", Class)]
+
+
+
+#set the order of the locations 
+motus4_long_meta$Location <- factor(
+  motus4_long_meta$Location,
+  levels = c("MAIN", "LAMP", "WIS", "NBL", "JEL", "HILT", "CML")) 
+
+# See which classes are present
+unique(motus4_long_meta$Class_grouped)
+
+# Replace unclassified taxonomy string with the word "unclassified"
+motus4_long_meta[Taxonomy == "d__;p___A;c__;o__;f__;g__;s__",
+                 Class := "Unclassified"]
+
+
+#assign certain colors to the classes 
+unique(motus4_long_meta$Class_grouped)
+
+#assign color blind friendly colors
+class_colors <- c(
+  "Alphaproteobacteria" = "#0072B2", 
+  "Gammaproteobacteria" = "#D55E00",
+  "Bacteroidia" = "#E69F00",
+  "Actinomycetes" = "#CC79A7",
+  "Verrucomicrobiia" = "#009E73",
+  "Other" = "#BDBDBD",
+  "Unclassified" = "#666666",
+  "Acidimicrobiia" = "#56B4E9",
+  "Poseidoniia" = "#F0E442")
+
+#make stacked bar by month
+ggplot(motus4_long_meta,
+       aes(x = Location,
+           y = RelativeAbundance * 100,
+           fill = Class_grouped)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Month, ncol = 1) +
+  labs(
+    x = "Location",
+    y = "Relative abundance (%)",
+    fill = "Bacterial Class") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    strip.text = element_text(size = 14),
+    legend.position = "bottom") + scale_fill_manual(values = class_colors)
+
+
+#MAKE SAME GRAPH BUT BY FAMILY INSTEAD OF CLASS
+
+# Extract family from taxonomy
+motus4_long_meta[, Family := sub(".*f__([^;]+).*", "\\1", Taxonomy)]
+
+# Replace unclassified taxonomy string with the word "unclassified"
+motus4_long_meta[Taxonomy == "d__;p___A;c__;o__;f__;g__;s__",
+                 Family := "Unclassified"]
+
+#calculate relative abundances
+motus4_long_meta[, RelativeAbundance := 
+                   Abundance / sum(Abundance),
+                 by = sampleid]
+
+# Calculate total abundance of each family
+family_abundance <- motus4_long_meta[, .(
+  Total = sum(Abundance)), by = Family]
+
+family_abundance[, Proportion := Total / sum(Total)]
+
+# Group families representing less than 1% into Other
+motus4_long_meta[, Family_grouped :=
+                   ifelse(Family %in% family_abundance[Proportion < 0.01, Family],
+                          "Other", Family)]
+
+# See which families are present
+unique(motus4_long_meta$Family_grouped)
+
+#Assign color-blind-friendly colors
+family_colors <- c(
+  "Other" = "#BDBDBD",
+  "Burkholderiaceae" = "#882255", 
+  "Methylophilaceae" = "#E69F00",
+  "Nanopelagicaceae" = "#332288",
+  "UBA953" = "#117733",
+  "Flavobacteriaceae" = "#D55E00",
+  "Pelagibacteraceae" = "#56B4E9",
+  "Microbacteriaceae" = "#0072B2",
+  "Unclassified" = "#666666",
+  "Puniceispirillaceae" = "#999933",
+  "Rhodobacteraceae" = "#009E73",
+  "Schleiferiaceae" = "#AA4499",
+  "Pseudohongiellaceae" = "#44AA99",
+  "Actinomarinaceae" = "#DDCC77",
+  "D2472" = "#F0E442",
+  "Azotimanducaceae" = "#CC79A7",
+  "Poseidoniaceae" = "#88CCEE",
+  "Pseudothioglobaceae" = "#D55E00")
+
+# Make stacked bar by month
+ggplot(motus4_long_meta,
+       aes(x = Location,
+           y = RelativeAbundance * 100,
+           fill = Family_grouped)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Month, ncol = 1) +
+  labs(
+    x = "Location",
+    y = "Relative abundance (%)",
+    fill = "Bacterial Family") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    strip.text = element_text(size = 14),
+    legend.position = "bottom") +
+  scale_fill_manual(values = family_colors)
 

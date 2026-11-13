@@ -11,6 +11,7 @@ library(dplyr) #for making summary tables
 library(tidyr) #for making summary tables
 library(writexl) #for exporting tables into excel 
 library(ggnewscale) #to add an additional scale for ellipses on pcoa plots
+library(ggh4x) #for adding second x axis label under replicate numbers
 
 #### ====================================================================== ####
 #LOADING IN AND CONCATENTING .MAPSTAT.FILTERED AND .MAPSTAT FILES FOR EACH SAMPLE
@@ -306,19 +307,21 @@ ggplot(all_joined, aes(x = Location, y = fragmentCount, fill = class)) + all_bar
     legend.text = element_text(size = 8))
 
   
+
 #stacked bar plot of site vs standardized fragment count(to mOTU sums)
 #FOR POSTER
 stacked_bar <- ggplot(all_joined, aes(x = Location, y = fragmentCount_prop_eachARG, fill = class)) + 
   all_bars + labs( x = "Site", y = " Cumulative standardized ARG fragment count", fill = "ARG Class") +
     scale_fill_manual(values = ARG_palette) + 
   facet_wrap(~Month, ncol = 1, nrow = 4) +  theme(
-    legend.position = "right",
-    #legend.box = "horizontal",
+    legend.position = "bottom",
     legend.title = element_text(size = 14, face = "bold"),
     legend.text = element_text(size = 11), 
     axis.title.x = element_text(size = 14),
     axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
     axis.text.y = element_text(size = 12), strip.text = element_text(size = 14, face = "bold")) +geom_vline( xintercept = 3.5,linetype = "dashed",color = "#C0392B",linewidth = 0.8) #add vertical line to distinguish between fresh and salty sites
+
+stacked_bar
 
 #create an arrow panel (for adding salinity arrow)
 arrow_plot <- ggplot() + annotate(
@@ -331,18 +334,82 @@ arrow_plot <- ggplot() + annotate(
   scale_y_continuous(limits = c(0, 1.5)) +
   theme_void()
 
+
 #combine stacked bar graph and arrow panel
-fig5 <- plot_grid(
-  stacked_bar,
-  arrow_plot,
-  ncol = 1,
-  rel_heights = c(1, 0.08),
-  align = "v")
+ARG_stacked_bar <- plot_grid(stacked_bar,arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
 
-#FOR POSTER
-fig5
+ARG_stacked_bar
 
- 
+
+#ARG class barplot with replicates next to each other 
+
+#assign location and replicate order
+location_order <- c("MAIN", "LAMP", "WIS", "NBL", "JEL", "HILT", "CML")
+replicate_order <- c("1", "2", "3")
+
+correct_order <- unlist(lapply(location_order, function(loc) {
+  paste(loc, replicate_order, sep = "-")
+}))
+
+#set x axis labeling with sites and replicates accordingly 
+all_joined <- all_joined %>%
+  mutate(
+    Location = factor(Location, levels = location_order),
+    DNA_Number = factor(DNA_Number, levels = replicate_order),
+    Location_Replicate = factor(
+      paste(Location, DNA_Number, sep = "-"),
+      levels = correct_order))
+
+#make plot
+ARG_class <- ggplot(
+  all_joined,
+  aes(x = Location_Replicate,
+      y = fragmentCount_prop_eachARG,
+      fill = class)) + 
+  all_bars +
+  labs(
+    x = "Location and replicate",
+    y = "Standardized ARG fragment count",
+    fill = "ARG Class") +
+  scale_fill_manual(values = ARG_palette) +
+  scale_x_discrete(
+    labels = function(x) {
+      location <- sub("-.*", "", x)
+      replicate <- sub(".*-", "", x)
+      previous_location <- c("", head(location, -1))
+      
+      ifelse(
+        location == previous_location,
+        replicate,
+        paste(replicate, location, sep = "\n")
+      )
+    }
+  ) +
+  facet_wrap(~Month, ncol = 1, nrow = 4) +
+  theme_classic() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 11),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold")) 
+
+#combine bar graph and arrow panel
+ARG_class <- plot_grid(ARG_class,arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
+
+ARG_class
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/ARG_Class_Barplot.png",
+  plot = ARG_class, width = 12,height = 10, units = "in")
+
+
+
+
 #stacked bar plot of Date vs fragment count faceted by site
 ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) + all_bars + 
     labs( x = "Month", y = "Fragment Count",
@@ -387,7 +454,7 @@ ggplot(ARG_summary2, aes(x = Month, y = mean_frags, color = Location, group = Lo
 
 #scatterplot of standardized fragment count vs log chlorophyll by location
 #FOR POSTER
-ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_eachARG), color = Location, shape = Shape)) + 
+Chlorophyll_scatter <- ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric(fragmentCount_prop_eachARG), color = Location, shape = Shape)) + 
   geom_point(size = 6)  + theme_classic() + scale_shape_manual(values = c(
     "Tidal sites" = 17,  # triangle for salty
     "Nontidal sites" = 16 )) + # circle for fresh
@@ -397,6 +464,13 @@ ggplot(all_joined, aes(x = log(as.numeric(chlorophyll_ug_per_L)), y = as.numeric
         axis.title.y = element_text(size = 14), 
         axis.text.x = element_text(size = 11),
         axis.text.y = element_text(size = 12)) 
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Chlorophyll_scatter.png",
+  plot = Chlorophyll_scatter, width = 12,height = 10, units = "in")
+
+
 
 #scatterplot of chlorophyll over time, colored by site 
 ggplot(chlorophyll_summary, aes(x = Month, y = mean_chlor, color = Location, group = Location)) +
@@ -612,7 +686,7 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Location, shape = Shape)) 
 #plot PCoA by Location (all samples)
 #with ellipses by saltiness 
 #FOR POSTER
-ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2)) +
+All_pcoa <- ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2)) +
   # Points colored by location, shaped by tidal status
   geom_point(aes(color = Location, shape = Shape), size = 8) +
   scale_shape_manual(
@@ -622,20 +696,14 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2)) +
       "Nontidal sites" = 16)) + # Color scale for locations
   scale_color_manual(
     name = "Location",
-    values = Site_palette
-  ) +
-  # Start a separate color scale for ellipses
-  ggnewscale::new_scale_color() +
-  stat_ellipse( # Ellipses colored by tidal status
+    values = Site_palette) + # Start a separate color scale for ellipses
+  ggnewscale::new_scale_color() + stat_ellipse( # Ellipses colored by tidal status
     aes(color = Shape, group = Shape),
-    linewidth = 1.5
-  ) + scale_color_manual(
-    name = "Ellipses",
-    values = c(
+    linewidth = 1.5) + scale_color_manual(
+    name = "Ellipses",values = c(
       "Tidal sites" = "blue",
       "Nontidal sites" = "cyan")) + theme_classic() +
-  labs(
-    x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
+  labs(x = paste0("PCoA Axis 1 (", PCoA1_percent, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent, "%)")) +
   xlim(-0.75, 1) + ylim(-1.5, 1.2) + theme(
     legend.text = element_text(size = 9),
@@ -644,6 +712,13 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2)) +
     axis.text.x = element_text(size = 11),
     axis.text.y = element_text(size = 12),
     legend.position = "right")
+All_pcoa
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/All_pcoa.png",
+  plot = All_pcoa, width = 12,height = 10, units = "in")
+
 
 
 #PERMNOVA test for clustering
@@ -656,7 +731,7 @@ location_month
 #both are significant
 
 #plot PCoA by month
-ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Month)) +
+Month_pcoa <- ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Month)) +
   geom_point(size = 6) +
   theme_classic() +
     labs(
@@ -667,6 +742,14 @@ ggplot(pcoa_points, aes(x = PCoA1, y = PCoA2, color = Month)) +
   theme(legend.text = element_text(size = 9), axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 11),
         axis.text.y = element_text(size = 12))
+Month_pcoa
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Month_pcoa.png",
+  plot = Month_pcoa, width = 12,height = 10, units = "in")
+
+
 
 #PERMNOVA test for clustering
 adonis2(arg_dist ~ Month, data = pcoa_points, permutations = 999)
@@ -728,7 +811,7 @@ PCoA1_percent_salty <- round(eig_percent_salty[1], 1)
 PCoA2_percent_salty <- round(eig_percent_salty[2], 1)
 
 #plot salty PCoA by Location
-ggplot(pcoa_points_salty, aes(x = PCoA1, y = PCoA2, color = Location)) +
+Salty_pcoa_location <- ggplot(pcoa_points_salty, aes(x = PCoA1, y = PCoA2, color = Location)) +
   geom_point(size = 4) +
   theme_classic() +
   labs(title = "Saltwater sites", 
@@ -736,14 +819,30 @@ ggplot(pcoa_points_salty, aes(x = PCoA1, y = PCoA2, color = Location)) +
     y = paste0("PCoA Axis 2 (", PCoA2_percent_salty, "%)"),
     color = "Location") + stat_ellipse() + theme_classic() +scale_color_manual(values = Site_palette) + xlim(-2, 1.5) + ylim(-2, 1.5)
 
+Salty_pcoa_location
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Salty_pcoa_location.png",
+  plot = Salty_pcoa_location, width = 12,height = 10, units = "in")
+
+
+
 #plot salty pcoa by month
-ggplot(pcoa_points_salty, aes(x = PCoA1, y = PCoA2, color = Month)) +
+Salty_pcoa_month <- ggplot(pcoa_points_salty, aes(x = PCoA1, y = PCoA2, color = Month)) +
   geom_point(size = 4) +
   theme_classic() +
   labs(title= "Saltwater sites",
     x = paste0("PCoA Axis 1 (", PCoA1_percent_salty, "%)"),
     y = paste0("PCoA Axis 2 (", PCoA2_percent_salty, "%)"),
     color = "Month") + stat_ellipse() + theme_classic() +scale_color_manual(values = Month_palette) + xlim(-2, 1.5) + ylim(-2, 1.5)
+
+Salty_pcoa_month
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Salty_pcoa_month.png",
+  plot = Salty_pcoa_month, width = 12,height = 10, units = "in")
 
 
 #PCoA for fresh sites 
@@ -806,7 +905,7 @@ PCoA1_percent_fresh <- round(eig_percent_fresh[1], 1)
 PCoA2_percent_fresh <- round(eig_percent_fresh[2], 1)
 
 #plot fresh PCoA by Location
-ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Location)) +
+Fresh_pcoa_location <- ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Location)) +
   geom_point(size = 4) +
   theme_classic() +
   labs(title= "Freshwater sites",
@@ -815,8 +914,16 @@ ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Location)) +
     color = "Location") + stat_ellipse() + theme_classic() +
   scale_color_manual(values = Site_palette) + xlim(-2, 1.5) + ylim(-2, 1.5)
 
+Fresh_pcoa_location
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Fresh_pcoa_location.png",
+  plot = Fresh_pcoa_location, width = 12,height = 10, units = "in")
+
+
 #plot fresh pcoa by month
-ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Month)) +
+Fresh_pcoa_month <- ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Month)) +
   geom_point(size = 4) +
   theme_classic() +
   labs(title= "Freshwater sites",
@@ -824,6 +931,14 @@ ggplot(pcoa_points_fresh, aes(x = PCoA1, y = PCoA2, color = Month)) +
     y = paste0("PCoA Axis 2 (", PCoA2_percent_fresh, "%)"),
     color = "Month") + stat_ellipse() + theme_classic() +
   scale_color_manual(values = Month_palette) + xlim(-2, 1.5) + ylim(-2, 1.5)
+
+Fresh_pcoa_month
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Fresh_pcoa_month.png",
+  plot = Fresh_pcoa_month, width = 12,height = 10, units = "in")
+
 
 
 #### ====================================================================== ####
@@ -990,6 +1105,8 @@ colSums(is.na(motus4_combined[, ..sample_columns]))
 colSums(motus4_combined[, ..sample_columns])
 
 
+#note: there are no mitochondria or chloroplasts 
+
 #### ====================================================================== ####
 #GRAPH MOTUS4 (MICROBIAL TAXONOMY) DATA
 
@@ -1014,6 +1131,9 @@ motus4_long_meta <- motus4_long %>%
 #377 was unable to be sequenced which is a LAMP November sample
 setdiff(weekly_metadata$sampleid, motus4_long$sampleid)
 
+#remove anything that is unclassified
+motus4_long_meta <- motus4_long_meta %>%
+  filter(Class_grouped != "d__;p___A;c__;o__;f__;g__;s__")
 
 #make a class-level stacked bar graph,
 #where each bar represents one sample and each color represents a bacterial class
@@ -1026,7 +1146,6 @@ motus4_long_meta[, RelativeAbundance :=
               Abundance / sum(Abundance),
             by = sampleid]
 
-
 # Group rare classes representing less than 1% into "Other"
 class_abundance <- motus4_long_meta[, .(
   Total = sum(Abundance)), by = Class]
@@ -1034,7 +1153,6 @@ class_abundance[, Proportion := Total / sum(Total)]
 motus4_long_meta[, Class_grouped :=
                    ifelse(Class %in% class_abundance[Proportion < 0.01, Class],
                           "Other", Class)]
-
 
 
 #set the order of the locations 
@@ -1045,14 +1163,6 @@ motus4_long_meta$Location <- factor(
 # See which classes are present
 unique(motus4_long_meta$Class_grouped)
 
-# Replace unclassified taxonomy string with the word "unclassified"
-motus4_long_meta[Taxonomy == "d__;p___A;c__;o__;f__;g__;s__",
-                 Class := "Unclassified"]
-
-
-#assign certain colors to the classes 
-unique(motus4_long_meta$Class_grouped)
-
 #assign color blind friendly colors
 class_colors <- c(
   "Alphaproteobacteria" = "#0072B2", 
@@ -1061,16 +1171,15 @@ class_colors <- c(
   "Actinomycetes" = "#CC79A7",
   "Verrucomicrobiia" = "#009E73",
   "Other" = "#BDBDBD",
-  "Unclassified" = "#666666",
   "Acidimicrobiia" = "#56B4E9",
   "Poseidoniia" = "#F0E442")
 
-#make stacked bar by month
+
+#bar graph with replicates stacked on each other
 ggplot(motus4_long_meta,
-       aes(x = Location,
-           y = RelativeAbundance * 100,
-           fill = Class_grouped)) +
-  geom_bar(stat = "identity") +
+                     aes(x = Location,
+                         y = RelativeAbundance * 100,
+                         fill = Class_grouped,)) + geom_bar(stat = "identity") +
   facet_wrap(~Month, ncol = 1) +
   labs(
     x = "Location",
@@ -1082,7 +1191,81 @@ ggplot(motus4_long_meta,
     axis.text.y = element_text(size = 12),
     axis.title = element_text(size = 14),
     strip.text = element_text(size = 14),
-    legend.position = "bottom") + scale_fill_manual(values = class_colors)
+    legend.position = "bottom") +
+  scale_fill_manual(values = class_colors)
+
+
+#now unstack the replicates
+
+# Set location and replicate order
+location_order <- c("MAIN", "LAMP", "WIS", "NBL",
+                    "JEL", "HILT", "CML")
+
+replicate_order <- c("1", "2", "3")
+
+# Create correct x-axis order
+correct_order <- unlist(
+  lapply(location_order, function(loc) {
+    paste(loc, replicate_order, sep = "-")
+  }))
+
+# Create location-replicate variable
+motus4_long_meta <- motus4_long_meta %>%
+  mutate(
+    Location = factor(Location, levels = location_order),
+    DNA_Number = factor(DNA_Number, levels = replicate_order),
+    Location_Replicate = factor(
+      paste(Location, DNA_Number, sep = "-"),
+      levels = correct_order))
+
+#graph with replicates next to each other
+class_taxa <- ggplot(motus4_long_meta,
+                                   aes(x = Location_Replicate,
+                                       y = RelativeAbundance * 100,
+                                       fill = Class_grouped)) +
+  geom_col() +
+  facet_wrap(~Month, ncol = 1) +
+  labs(
+    x = "Location and replicate number",
+    y = "Relative abundance (%)",
+    fill = "Bacterial Class") +
+  scale_x_discrete(
+    labels = function(x) {
+      location <- sub("-.*", "", x)
+      replicate <- sub(".*-", "", x)
+      previous_location <- c("", head(location, -1))
+      ifelse(location == previous_location,
+             replicate,
+             paste(replicate, location, sep = "\n"))
+    }
+  ) +
+  scale_fill_manual(values = class_colors) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 12),
+    axis.title.y = element_text(size = 14),
+    strip.text = element_text(size = 14),
+    legend.position = "bottom")
+
+# Display graph
+class_taxa
+
+#combine stacked bar graph and salinity arrow
+class_plot <- plot_grid(
+  class_taxa, arrow_plot,ncol = 1, rel_heights = c(1, 0.08),align = "v")
+
+class_plot
+
+#save as png
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Bacteria_Class_Barplot.png",
+  plot = class_plot, width = 12,height = 10, units = "in")
+
+#save as pdf
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Bacteria_Class_Barplot.pdf",
+  plot = class_plot, width = 12,height = 10, units = "in")
 
 
 #MAKE SAME GRAPH BUT BY FAMILY INSTEAD OF CLASS
@@ -1152,5 +1335,55 @@ ggplot(motus4_long_meta,
     axis.title = element_text(size = 14),
     strip.text = element_text(size = 14),
     legend.position = "bottom") +
-  scale_fill_manual(values = family_colors)
+  scale_fill_manual(values = family_colors) 
+
+
+#plot with replicates next to each other instead of stacked
+family_taxa <- ggplot(motus4_long_meta,
+                      aes(x = Location_Replicate,
+                          y = RelativeAbundance * 100,
+                          fill = Family_grouped)) +
+  geom_col() +
+  facet_wrap(~Month, ncol = 1) +
+  labs(
+    x = "Location and replicate number",
+    y = "Relative abundance (%)",
+    fill = "Bacterial Family"
+  ) +
+  scale_x_discrete(
+    labels = function(x) {
+      location <- sub("-.*", "", x)
+      replicate <- sub(".*-", "", x)
+      
+      previous_location <- c("", head(location, -1))
+      
+      ifelse(location == previous_location,
+             replicate,
+             paste(replicate, location, sep = "\n"))
+    }
+  ) +
+  scale_fill_manual(values = family_colors) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 12),
+    axis.title.y = element_text(size = 14),
+    strip.text = element_text(size = 14),
+    legend.position = "bottom"
+  )
+
+family_taxa
+
+#combine stacked bar graph and salinity arrow
+family_plot <- plot_grid(
+  family_taxa, arrow_plot,ncol = 1, rel_heights = c(1, 0.08),align = "v")
+
+family_plot
+
+#save plot
+ggsave(
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/Bacteria_Family_Barplot.png",
+  plot = family_plot, width = 12,height = 10, units = "in")
+
+
 

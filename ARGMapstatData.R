@@ -12,6 +12,10 @@ library(tidyr) #for making summary tables
 library(writexl) #for exporting tables into excel 
 library(ggnewscale) #to add an additional scale for ellipses on pcoa plots
 library(ggh4x) #for adding second x axis label under replicate numbers
+library(ggh4x) #for centering location names under the 3 replicates on x axis
+library(patchwork)
+library(grid)
+
 
 #### ====================================================================== ####
 #LOADING IN AND CONCATENTING .MAPSTAT.FILTERED AND .MAPSTAT FILES FOR EACH SAMPLE
@@ -208,6 +212,37 @@ all_joined <- all_joined %>%
       Location %in% c("WIS", "LAMP", "MAIN") ~ "Nontidal sites"))
 
 
+#look into ARG classes showing up as NA:
+
+#Check whether the seven ARGs exist in PanRes_metadata
+na_ARGs %>%
+  distinct(RefSequence) %>%
+  left_join(
+    PanRes_metadata,
+    by = c("RefSequence" = "cluster_representative")
+  ) %>%
+  select(RefSequence, class)
+#all 8 rows still have NA for class after joining directly to PanRes_metadata
+
+#Check whether the seven unique reference IDs exist in PanRes_metadata
+na_ARGs %>%
+  ungroup() %>%
+  distinct(RefSequence) %>%
+  anti_join(
+    PanRes_metadata,
+    by = c("RefSequence" = "cluster_representative"))
+#Three reference IDs are missing from PanRes_metadata:
+#pan_2197_v1.0.1, pan_13053_v1.0.1, pan_3602_v1.0.1 
+
+PanRes_metadata %>%
+  filter(cluster_representative %in% na_ARGs$RefSequence) %>%
+  select(cluster_representative, class)
+#Four reference IDs are present, but their class is NA
+#1 pan_12664_v1.0.1       NA   
+#2 pan_6161_v1.0.1        NA   
+#3 pan_6625_v1.0.1        NA   
+#4 pan_8597_v1.0.1        NA   
+
 #### ====================================================================== ####
 #CALCULATIONS FOR STANDARDIZED COUNTS, MEANS, STANDARD ERROR 
 
@@ -341,15 +376,14 @@ ARG_stacked_bar <- plot_grid(stacked_bar,arrow_plot, ncol = 1, rel_heights = c(1
 ARG_stacked_bar
 
 
-#ARG class barplot with replicates next to each other 
+#NOW MAKE ARG CLASS BARPLOT, BUT UNSTACK THE REPLICATES
 
 #assign location and replicate order
 location_order <- c("MAIN", "LAMP", "WIS", "NBL", "JEL", "HILT", "CML")
 replicate_order <- c("1", "2", "3")
 
 correct_order <- unlist(lapply(location_order, function(loc) {
-  paste(loc, replicate_order, sep = "-")
-}))
+  paste(loc, replicate_order, sep = "-")}))
 
 #set x axis labeling with sites and replicates accordingly 
 all_joined <- all_joined %>%
@@ -360,15 +394,23 @@ all_joined <- all_joined %>%
       paste(Location, DNA_Number, sep = "-"),
       levels = correct_order))
 
-#make plot
-ARG_class <- ggplot(
-  all_joined,
-  aes(x = Location_Replicate,
-      y = fragmentCount_prop_eachARG,
-      fill = class)) + 
-  all_bars +
-  labs(
-    x = "Location and replicate",
+#OPTION 1- GRAY RECTANGLES BEHIND EVERY OTHER SITE
+#HAVE REPLICTAE NUMBERS BELOW EACH
+
+site_background <- data.frame(
+  Location = unique(sub("-.*", "", all_joined$Location_Replicate))) %>%
+  mutate(
+    site_number = row_number(),
+    xmin = (site_number - 1) * 3 + 0.5,
+    xmax = site_number * 3 + 0.5) %>%
+  filter(site_number %% 2 == 0)
+
+#make plot with gray rectangles in background
+ARG_class_rect1 <- ggplot(all_joined, aes(x = Location_Replicate,
+      y = fragmentCount_prop_eachARG,fill = class)) + geom_rect(data = site_background,
+    aes(xmin = xmin, xmax = xmax,ymin = -Inf, ymax = Inf),
+    inherit.aes = FALSE,fill = "gray90",alpha = 0.5) + all_bars +
+  labs(x = "Location and replicate",
     y = "Standardized ARG fragment count",
     fill = "ARG Class") +
   scale_fill_manual(values = ARG_palette) +
@@ -377,14 +419,10 @@ ARG_class <- ggplot(
       location <- sub("-.*", "", x)
       replicate <- sub(".*-", "", x)
       previous_location <- c("", head(location, -1))
-      
       ifelse(
         location == previous_location,
         replicate,
-        paste(replicate, location, sep = "\n")
-      )
-    }
-  ) +
+        paste(replicate, location, sep = "\n"))}) +
   facet_wrap(~Month, ncol = 1, nrow = 4) +
   theme_classic() +
   theme(
@@ -398,19 +436,140 @@ ARG_class <- ggplot(
     strip.text = element_text(size = 14, face = "bold")) 
 
 #combine bar graph and arrow panel
-ARG_class <- plot_grid(ARG_class,arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
+ARG_class_rect1 <- plot_grid(ARG_class_rect1, arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
 
-ARG_class
+ARG_class_rect1
+
+
+#OPTION 2 - VERTICAL LINES BETWEEN SITES WITH SITE REPLICATE NUMBERS
+#NO GRAY RECTANGLES
+site_breaks <- which(
+  sub("-.*", "", levels(factor(all_joined$Location_Replicate))[-1]) !=
+    sub("-.*", "", levels(factor(all_joined$Location_Replicate))[-length(levels(factor(all_joined$Location_Replicate)))])
+) + 0.5
+
+#make plot with vertical dotted lines, site replicate numbers no background rectangles
+ARG_class_lines <- ggplot(
+  all_joined,
+  aes(x = Location_Replicate,
+      y = fragmentCount_prop_eachARG,
+      fill = class)) + geom_vline(
+        xintercept = site_breaks,
+        linetype = "dotted",
+        color = "gray50",
+        linewidth = 0.5) +
+  all_bars +
+  labs(x = "Location and replicate",
+       y = "Standardized ARG fragment count",
+       fill = "ARG Class") +
+  scale_fill_manual(values = ARG_palette) +
+  scale_x_discrete(
+    labels = function(x) {
+      location <- sub("-.*", "", x)
+      replicate <- sub(".*-", "", x)
+      previous_location <- c("", head(location, -1))
+      
+      ifelse(
+        location == previous_location,
+        replicate,
+        paste(replicate, location, sep = "\n"))}) +
+  facet_wrap(~Month, ncol = 1, nrow = 4) +
+  theme_classic() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 11),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold")) 
+
+#combine bar graph and arrow panel
+ARG_class_lines <- plot_grid(ARG_class_lines,arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
+
+ARG_class_lines
+
+
+
+#OPTION 3 ARG BARPLOT WITH GRAY RECTANGLES BEHIND EVERY OTHER SITE
+#SITE REPLICATE NUMBERS REMOVED 
+
+# Create alternating gray backgrounds
+site_background <- data.frame(
+  xmin = c(3.5, 9.5, 15.5),
+  xmax = c(6.5, 12.5, 18.5))
+
+# Create ARG class plot with rectangles in background and no replicate numbers
+ARG_class_rect2 <- ggplot(all_joined,aes(x = Location_Replicate,
+      y = fragmentCount_prop_eachARG, fill = class)) +
+    geom_rect( # Gray rectangles behind alternating sites
+    data = site_background, aes(xmin = xmin, xmax = xmax,
+        ymin = -Inf, ymax = Inf),
+    inherit.aes = FALSE,fill = "gray90",alpha = 0.5) +
+  geom_col(position = "stack") + # Stacked ARG class bars
+  labs(x = "Site", y = "Standardized ARG fragment count",
+    fill = "ARG Class") + scale_fill_manual(values = ARG_palette) +
+  scale_x_discrete( # Display site names only under the middle replicate
+    labels = function(x) {
+      location <- sub("-.*", "", x)
+      replicate <- sub(".*-", "", x)
+      ifelse(replicate == "2", location, "")}) +
+  facet_wrap(~Month, ncol = 1, nrow = 4) + theme_classic() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 11),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"))
+
+#combine bar graph and arrow panel
+ARG_class_rect2 <- plot_grid(ARG_class_rect2,arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
+
+# Display plot
+ARG_class_rect2
 
 #save plot
 ggsave(
-  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/ARG_Class_Barplot.png",
-  plot = ARG_class, width = 12,height = 10, units = "in")
+  "C:/Users/ndane/OneDrive - USNH/Documents/R/Harvey_Lab/ARGprofiler/figures/ARG_Class_Shaded_Barplot.png",
+  plot = ARG_class_rect2, width = 12,height = 10, units = "in")
+
+#FOURTH OPTION: VERTICAL DOTTED LINES INSTEAD OF SHADED RECTANGLES TO DISTINGUISH SITES
+#SITE REPLICATE NUMBERS REMOVED
+ARG_class_lines2 <- ggplot(all_joined,
+  aes(x = Location_Replicate,y = fragmentCount_prop_eachARG,fill = class)) +
+  geom_col(position = "stack") +
+  geom_vline(xintercept = site_breaks,linetype = "dotted",
+    color = "gray50",linewidth = 0.5) +
+  labs(x = "Location",y = "Standardized ARG fragment count", fill = "ARG Class") +
+  scale_fill_manual(values = ARG_palette) +
+  scale_x_discrete( #having it only display the site name under the second replicate
+    labels = function(x) {
+      location <- sub("-.*", "", x)
+      replicate <- sub(".*-", "", x)
+      ifelse(replicate == "2", location, "")}) +
+  facet_wrap(~Month, ncol = 1, nrow = 4) +
+  theme_classic() +
+  theme(legend.position = "bottom",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 11),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"))
+
+#combine bar graph and arrow panel
+ARG_class_lines2 <- plot_grid(ARG_class_lines2,arrow_plot, ncol = 1, rel_heights = c(1, 0.08), align = "v")
+
+ARG_class_lines2
 
 
 
-
-#stacked bar plot of Date vs fragment count faceted by site
+#stacked bar plot of Date vs RAW fragment count faceted by site 
 ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) + all_bars + 
     labs( x = "Month", y = "Fragment Count",
           fill = "ARG Class") +
@@ -419,7 +578,8 @@ ggplot(all_joined, aes(x = Month, y = fragmentCount, fill = class)) + all_bars +
         axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
   
  
-#stacked bar plot of Date vs standardized fragment count faceted by site
+
+#stacked bar plot of Date vs STANDARDIZED fragment count, faceted by site
 ggplot(all_joined, aes(x = Month, y = fragmentCount_prop_eachARG, fill = class)) + all_bars + 
     labs( x = "Month", y = "Standardized Fragment Count",
           fill = "ARG Class") +
@@ -1133,7 +1293,7 @@ setdiff(weekly_metadata$sampleid, motus4_long$sampleid)
 
 #remove anything that is unclassified
 motus4_long_meta <- motus4_long_meta %>%
-  filter(Class_grouped != "d__;p___A;c__;o__;f__;g__;s__")
+  filter(Taxonomy != "d__;p___A;c__;o__;f__;g__;s__")
 
 #make a class-level stacked bar graph,
 #where each bar represents one sample and each color represents a bacterial class
@@ -1272,10 +1432,6 @@ ggsave(
 
 # Extract family from taxonomy
 motus4_long_meta[, Family := sub(".*f__([^;]+).*", "\\1", Taxonomy)]
-
-# Replace unclassified taxonomy string with the word "unclassified"
-motus4_long_meta[Taxonomy == "d__;p___A;c__;o__;f__;g__;s__",
-                 Family := "Unclassified"]
 
 #calculate relative abundances
 motus4_long_meta[, RelativeAbundance := 
